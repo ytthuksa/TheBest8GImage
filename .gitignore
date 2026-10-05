@@ -28,6 +28,9 @@ _chromeprofile/
 _cleanup_try.txt
 _posetest.html
 
+# ── 公众号推文素材（含本机实测出图，不入公开仓库）──────
+_mp/
+
 # ── Python ─────────────────────────────────────────────
 __pycache__/
 *.py[cod]

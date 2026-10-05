@@ -1,4 +1,6 @@
-# Qwen-Image-2.1 本地出图台（WebUI）
+# TheBest8GImage
+
+**在 8GB 显存的 Windows 本机上跑通 Qwen-Image-2.1 中文出图台** —— 无审查、出图快一倍、209 个预设姿势、软件零花费。
 
 一套跑在 **ComfyUI + Qwen-Image-2.1（8GB 显存 Windows 本机）** 上的**轻量中文 Web 前端**与配套脚本。
 双击 `.bat` 即可出图，内置文生图 / 参考图编辑 / 背景移除 / 姿势编辑四个标签页，自带历史画廊与提示词润色。
