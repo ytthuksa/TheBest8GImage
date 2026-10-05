@@ -1,0 +1,52 @@
+# ── 模型权重（体积大、各自有独立许可证，不入库）────────────
+models/
+*.safetensors
+*.gguf
+*.ckpt
+*.pt
+*.pth
+*.bin
+
+# ── ComfyUI / 出图台运行时数据 ──────────────────────────
+input/
+output/
+temp/
+_web_jobs.json
+_lan_url.txt
+_lan_url.json
+_last_run.json
+_object_info.json
+_ab_resp.json
+_igpu_test_resp.json
+
+# ── 开发期脚手架（不属于发布内容）──────────────────────
+_wx/
+_styletest/
+_backup/
+_installer_out/
+_chromeprofile/
+_cleanup_try.txt
+_posetest.html
+
+# ── Python ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# ── 编辑器 / 系统 ──────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── 打包 / 安装产物 ────────────────────────────────────
+Qwen21_安装包*/
+*.zip
+*.exe

@@ -1,0 +1,1385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qwen-Image-2.1 本地出图台</title>
+<style>
+:root{
+  --bg:#0d1016; --bg2:#12161f; --panel:#171c27; --panel2:#1e2431;
+  --line:#28303f; --line2:#333d4f;
+  --tx:#e7ebf3; --tx2:#9aa5ba; --tx3:#6b7688;
+  --acc:#6d8cff; --acc2:#8b5cf6; --ok:#34d399; --warn:#fbbf24; --err:#f87171;
+  --r:12px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:radial-gradient(1200px 600px at 15% -10%,#1b2338 0%,transparent 60%),
+             radial-gradient(900px 500px at 100% 0%,#241b38 0%,transparent 55%),
+             var(--bg);
+  color:var(--tx);
+  font:14px/1.6 "Segoe UI","Microsoft YaHei",-apple-system,system-ui,sans-serif;
+  min-height:100vh;
+}
+a{color:var(--acc);text-decoration:none}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#2b3344;border-radius:6px;border:2px solid var(--bg)}
+::-webkit-scrollbar-thumb:hover{background:#3a4459}
+
+/* ---------- 顶栏 ---------- */
+header{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  padding:12px 20px;
+  background:rgba(13,16,22,.82);backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--line);
+}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;letter-spacing:.2px}
+.logo .dot{width:10px;height:10px;border-radius:50%;background:linear-gradient(135deg,var(--acc),var(--acc2));box-shadow:0 0 12px var(--acc)}
+.logo small{font-weight:400;color:var(--tx3);font-size:12px;margin-left:2px}
+.pills{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+.pill{
+  display:flex;align-items:center;gap:6px;font-size:12px;
+  padding:4px 11px;border-radius:99px;border:1px solid var(--line);
+  background:var(--panel);color:var(--tx2);cursor:default;white-space:nowrap;
+}
+.pill i{width:7px;height:7px;border-radius:50%;background:var(--tx3);display:block}
+.pill.on i{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.pill.off i{background:var(--err)}
+/* 局域网地址胶囊：点一下复制，省得去翻控制台窗口 */
+.lan-chip{display:flex;align-items:center;gap:7px;font-size:12px;padding:4px 11px;
+  border-radius:99px;border:1px solid var(--line2);background:var(--panel);
+  color:var(--tx2);cursor:pointer;white-space:nowrap;transition:.15s}
+.lan-chip:hover{border-color:var(--acc);color:var(--tx)}
+.lan-chip b{color:#a9ffd6;font-weight:500;font-variant-numeric:tabular-nums}
+.lan-chip svg{flex:none;opacity:.8}
+
+/* ---------- 布局 ---------- */
+.wrap{display:grid;grid-template-columns:minmax(380px,460px) 1fr;gap:18px;padding:18px 20px 40px;max-width:1680px;margin:0 auto;align-items:start}
+@media (max-width:1080px){.wrap{grid-template-columns:1fr}}
+.card{background:linear-gradient(180deg,var(--panel) 0%,var(--bg2) 100%);border:1px solid var(--line);border-radius:var(--r)}
+.card + .card{margin-top:16px}
+.card-h{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);font-weight:600;font-size:13.5px}
+.card-h .sub{font-weight:400;color:var(--tx3);font-size:12px;margin-left:auto}
+.card-b{padding:16px}
+
+/* ---------- Tabs ---------- */
+.tabs{display:flex;gap:6px;padding:10px 10px 0;border-bottom:1px solid var(--line);background:rgba(0,0,0,.12)}
+.tab{
+  flex:1;padding:10px 8px;text-align:center;cursor:pointer;font-size:13.5px;font-weight:600;
+  color:var(--tx2);border-radius:10px 10px 0 0;border:1px solid transparent;border-bottom:none;
+  transition:.15s;user-select:none;position:relative;top:1px;
+}
+.tab:hover{color:var(--tx);background:rgba(255,255,255,.03)}
+.tab.act{color:var(--tx);background:var(--panel);border-color:var(--line);}
+.tab.act::after{content:"";position:absolute;left:12%;right:12%;bottom:-1px;height:2px;background:linear-gradient(90deg,var(--acc),var(--acc2));border-radius:2px}
+.tab em{display:block;font-style:normal;font-size:10.5px;color:var(--tx3);font-weight:400;margin-top:1px}
+.tab.act em{color:var(--tx2)}
+
+/* ---------- 表单 ---------- */
+label.f{display:block;font-size:12.5px;color:var(--tx2);margin:14px 0 6px;font-weight:500}
+label.f:first-child{margin-top:0}
+label.f .hint{color:var(--tx3);font-weight:400;font-size:11.5px}
+textarea,input[type=text],input[type=number],select{
+  width:100%;background:#0e121a;border:1px solid var(--line);color:var(--tx);
+  border-radius:9px;padding:9px 11px;font:13px/1.6 inherit;outline:none;transition:.15s;
+}
+textarea{resize:vertical;min-height:92px;font-family:inherit}
+textarea:focus,input:focus,select:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(109,140,255,.14)}
+select{cursor:pointer;appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239aa5ba'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 11px center;padding-right:30px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.chk{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--tx2);cursor:pointer;margin-top:12px;user-select:none}
+.chk input{width:15px;height:15px;accent-color:var(--acc);cursor:pointer}
+
+/* ---------- 按钮 ---------- */
+button{font:inherit;cursor:pointer;border-radius:9px;border:1px solid var(--line2);background:var(--panel2);color:var(--tx);padding:9px 14px;transition:.15s;font-size:13px;font-weight:500}
+button:hover:not(:disabled){background:#252d3d;border-color:#3f4a5e}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.primary{
+  background:linear-gradient(135deg,var(--acc),var(--acc2));border:none;color:#fff;font-weight:700;
+  padding:12px 16px;font-size:14.5px;box-shadow:0 6px 20px -8px var(--acc);
+}
+button.primary:hover:not(:disabled){filter:brightness(1.1);box-shadow:0 8px 26px -8px var(--acc)}
+button.ghost{background:transparent}
+button.mini{padding:6px 10px;font-size:12px;border-radius:8px}
+button.wide{width:100%;margin-top:16px}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+/* 不设 min-width:0 —— 否则按钮会被压到比文字还窄，「✨ 扩写」会断成两行 */
+.btns > button{flex:1 1 auto;white-space:nowrap}
+.btns > select{
+  flex:0 0 84px;background:var(--panel2);color:var(--tx2);border:1px solid var(--line2);
+  border-radius:9px;padding:0 7px;font-size:12px;font-family:inherit;cursor:pointer;
+}
+.btns > select:hover{border-color:var(--acc);color:var(--tx)}
+
+/* ---- 维度词库面板 ---- */
+#lex-panel{display:none;margin-top:11px;padding:11px 12px;border:1px solid var(--line);
+           border-radius:10px;background:var(--panel2)}
+#lex-panel.on{display:block}
+.lex-g{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.lex-g:last-child{margin-bottom:0}
+.lex-g > b{font-size:11px;color:var(--tx3);width:54px;flex:none;font-weight:500}
+.lex-t{font-size:11.5px;padding:3px 9px;border-radius:20px;border:1px solid var(--line2);
+       background:var(--panel);color:var(--tx2);cursor:pointer;user-select:none;white-space:nowrap}
+.lex-t:hover{border-color:var(--acc);color:var(--tx);background:var(--bg2)}
+/* ---- 风格模板（一键套用，虚线框以区别于普通维度词）---- */
+.lex-pres{font-size:11.5px;padding:3px 10px;border-radius:20px;border:1px dashed var(--acc);
+          background:var(--panel);color:var(--tx);cursor:pointer;user-select:none;white-space:nowrap}
+.lex-pres:hover{background:var(--bg2);border-style:solid}
+.lex-sep{height:1px;background:var(--line);margin:9px 0}
+
+/* ---- 多方向版本卡片 ---- */
+#enh-variants{display:none;margin-top:11px}
+#enh-variants.on{display:block}
+.var-card{border:1px solid var(--line2);border-radius:10px;padding:11px 13px;margin-bottom:8px;
+          background:var(--panel2);cursor:pointer;transition:border-color .12s}
+.var-card:hover{border-color:var(--acc)}
+.var-card > b{font-size:12px;color:var(--acc);display:block;margin-bottom:6px;font-weight:600}
+.var-card > p{font-size:12.5px;color:var(--tx2);line-height:1.65;margin:0}
+
+/* ---------- 上传 ---------- */
+.drop{
+  border:1.5px dashed var(--line2);border-radius:11px;padding:16px;text-align:center;
+  color:var(--tx3);font-size:12.5px;cursor:pointer;transition:.15s;background:rgba(255,255,255,.015);
+}
+.drop:hover,.drop.over{border-color:var(--acc);color:var(--tx2);background:rgba(109,140,255,.07)}
+.drop .ic{font-size:22px;display:block;margin-bottom:4px;opacity:.7}
+.thumb{position:relative;margin-top:10px;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:#0b0e14}
+.thumb img{display:block;width:100%;max-height:280px;object-fit:contain}
+.thumb .x{position:absolute;top:8px;right:8px;width:26px;height:26px;padding:0;border-radius:8px;background:rgba(0,0,0,.65);border-color:rgba(255,255,255,.18);font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center}
+.thumb .nm{position:absolute;left:0;right:0;bottom:0;padding:5px 10px;font-size:11px;color:var(--tx2);background:linear-gradient(transparent,rgba(0,0,0,.8));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ---------- 滑杆 ---------- */
+.slider{display:flex;align-items:center;gap:10px}
+.slider input[type=range]{flex:1;appearance:none;height:4px;border-radius:3px;background:#2b3344;outline:none}
+.slider input[type=range]::-webkit-slider-thumb{appearance:none;width:15px;height:15px;border-radius:50%;background:var(--acc);cursor:pointer;border:2px solid #0e121a;box-shadow:0 0 0 1px var(--acc)}
+.slider .val{min-width:52px;text-align:right;font-variant-numeric:tabular-nums;font-size:12.5px;color:var(--tx);background:#0e121a;border:1px solid var(--line);border-radius:7px;padding:3px 7px}
+
+/* ---------- 结果区 ---------- */
+.stage{
+  min-height:520px;display:flex;align-items:center;justify-content:center;
+  background:
+    linear-gradient(45deg,#11141b 25%,transparent 25%,transparent 75%,#11141b 75%),
+    linear-gradient(45deg,#11141b 25%,#0e1117 25%,#0e1117 75%,#11141b 75%);
+  background-size:22px 22px;background-position:0 0,11px 11px;
+  border-radius:0 0 var(--r) var(--r);padding:18px;position:relative;overflow:hidden;
+}
+.stage img{max-width:100%;max-height:min(74vh,900px);border-radius:10px;display:block;
+  box-shadow:0 20px 60px -20px rgba(0,0,0,.9);animation:pop .35s ease}
+@keyframes pop{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
+/* 一次出多张时的网格（2 张 1 行、3~4 张 2×2） */
+.stage .multi{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;
+  width:100%;align-self:stretch;align-content:center}
+.stage .multi img{max-width:100%;max-height:min(38vh,440px);margin:0 auto;border-radius:9px;
+  display:block;box-shadow:0 14px 36px -16px rgba(0,0,0,.9);cursor:zoom-in;
+  animation:pop .35s ease;transition:outline-color .15s;outline:2px solid transparent}
+.stage .multi img:hover{outline-color:var(--acc)}
+.stage .multi .cap{grid-column:1/-1;text-align:center;font-size:11.5px;color:var(--tx3)}
+.ph{text-align:center;color:var(--tx3);max-width:440px}
+.ph .big{font-size:44px;margin-bottom:10px;opacity:.35}
+.ph h3{margin:0 0 6px;color:var(--tx2);font-size:15px;font-weight:600}
+.ph p{margin:4px 0;font-size:12.5px;line-height:1.7}
+.ph kbd{background:var(--panel2);border:1px solid var(--line2);border-bottom-width:2px;border-radius:5px;padding:1px 6px;font-size:11.5px;font-family:Consolas,monospace;color:var(--tx)}
+
+/* 进度 */
+.prog{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:rgba(9,11,16,.9);backdrop-filter:blur(6px);z-index:5}
+.bar{width:min(420px,72%);height:5px;border-radius:99px;background:#222a38;overflow:hidden;position:relative}
+.bar span{position:absolute;top:0;bottom:0;width:38%;border-radius:99px;background:linear-gradient(90deg,var(--acc),var(--acc2));animation:slide 1.35s cubic-bezier(.65,.05,.36,1) infinite}
+@keyframes slide{0%{left:-40%}100%{left:100%}}
+.prog .t{font-size:15px;font-weight:600}
+.prog .s{font-size:12.5px;color:var(--tx2);font-variant-numeric:tabular-nums}
+
+/* 结果信息条 */
+.info{display:flex;gap:8px;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--line);background:rgba(0,0,0,.18);border-radius:0 0 var(--r) var(--r);align-items:center}
+.tag{font-size:11.5px;padding:3px 9px;border-radius:99px;background:var(--panel2);border:1px solid var(--line);color:var(--tx2);font-variant-numeric:tabular-nums}
+.tag b{color:var(--tx);font-weight:600}
+.tag.ok{border-color:rgba(52,211,153,.4);color:var(--ok)}
+.spacer{flex:1}
+
+/* ---------- 历史 ---------- */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:12px;padding:16px}
+.it{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#0f131b;cursor:pointer;transition:.15s;position:relative}
+.it:hover{border-color:var(--acc);transform:translateY(-2px);box-shadow:0 12px 28px -14px #000}
+.it .im{aspect-ratio:1;background:#0b0e14;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.it .im img{width:100%;height:100%;object-fit:cover;display:block}
+.it .mt{padding:7px 9px;font-size:11px;color:var(--tx3);display:flex;justify-content:space-between;gap:6px;align-items:center}
+.it .md{position:absolute;top:7px;left:7px;font-size:10.5px;padding:2px 7px;border-radius:99px;background:rgba(0,0,0,.7);border:1px solid rgba(255,255,255,.14);color:#dbe3f0;backdrop-filter:blur(4px)}
+.it .tm{position:absolute;top:7px;right:7px;font-size:10.5px;padding:2px 7px;border-radius:99px;background:rgba(0,0,0,.7);border:1px solid rgba(255,255,255,.14);color:#a9ffd6;font-variant-numeric:tabular-nums}
+.it .nb{position:absolute;right:7px;bottom:7px;font-size:10.5px;padding:2px 7px;border-radius:99px;background:rgba(109,140,255,.92);border:1px solid rgba(255,255,255,.2);color:#fff;font-weight:600;letter-spacing:.2px}
+.empty{padding:34px;text-align:center;color:var(--tx3);font-size:12.5px}
+
+/* ---------- 弹窗 ---------- */
+.modal{position:fixed;inset:0;background:rgba(6,8,12,.9);backdrop-filter:blur(8px);z-index:200;display:none;align-items:center;justify-content:center;padding:24px}
+.modal.show{display:flex}
+.modal .box{max-width:92vw;max-height:92vh;display:flex;flex-direction:column;gap:12px;align-items:center}
+.modal img{max-width:92vw;max-height:78vh;border-radius:12px;box-shadow:0 30px 80px -20px #000}
+.modal .acts{display:flex;gap:10px}
+.modal textarea{width:min(760px,88vw);min-height:70px}
+
+/* ---------- toast ---------- */
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);z-index:300;
+  background:#1b2231;border:1px solid var(--line2);border-left:3px solid var(--acc);border-radius:10px;
+  padding:11px 18px;font-size:13px;box-shadow:0 16px 40px -14px #000;opacity:0;transition:.28s;max-width:min(560px,90vw)}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.err{border-left-color:var(--err)}
+#toast.ok{border-left-color:var(--ok)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><span class="dot"></span>Qwen-Image-2.1 本地出图台 <small>8GB 显存优化版</small></div>
+  <div class="pills">
+    <div class="pill" id="p-comfy"><i></i><span>ComfyUI</span></div>
+    <div class="pill" id="p-ollama"><i></i><span>提示词扩写</span></div>
+    <div class="pill" id="p-queue"><i></i><span id="q-txt">队列空闲</span></div>
+    <div class="lan-chip" id="p-lan" style="display:none"
+         title="同一 WiFi 下的手机 / 平板浏览器打开这个地址（点一下复制）">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>
+      <span>手机访问 <b id="lan-txt"></b></span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <!-- ============ 左：控制面板 ============ -->
+  <div>
+    <div class="card">
+      <div class="tabs" id="tabs">
+        <div class="tab act" data-mode="t2i">文生图<em data-base="~63 秒" data-turbo="⚡ ~30 秒">~63 秒</em></div>
+        <div class="tab" data-mode="edit">参考图编辑<em data-base="~186 秒" data-turbo="⚡ ~58 秒">~186 秒</em></div>
+        <div class="tab" data-mode="bgremove">背景移除<em data-base="~87 秒" data-turbo="⚡ ~56 秒">~87 秒</em></div>
+        <div class="tab" data-mode="pose">姿势编辑<em data-base="~200 秒" data-turbo="~200 秒">~200 秒</em></div>
+      </div>
+      <div class="card-b">
+
+        <!-- 参考图（edit / bgremove） -->
+        <div id="refbox" style="display:none">
+          <label class="f" id="lbl-ref">参考图 <span class="hint">（拖进来或点击选择，建议 ≥768px）</span></label>
+          <div class="drop" id="drop">
+            <span class="ic">🖼️</span>
+            <span id="drop-txt">点击选择图片，或拖拽到此处</span>
+          </div>
+          <div class="thumb" id="thumb" style="display:none">
+            <img id="thumb-img" alt="参考图">
+            <button class="x" id="thumb-x" title="移除">×</button>
+            <div class="nm" id="thumb-nm"></div>
+          </div>
+          <input type="file" id="file" accept="image/*" style="display:none">
+        </div>
+
+        <!-- 提示词 -->
+        <label class="f" id="lbl-prompt">提示词 <span class="hint">（中文也行，模型对英文更准）</span></label>
+        <textarea id="prompt" placeholder="例如：赛博朋克风格的雨夜东京街头，霓虹灯倒映在湿漉漉的柏油路上，电影感打光"></textarea>
+        <div class="btns">
+          <button id="btn-enh" title="按 Qwen 官方 PE 方法论扩写：补位置短语 / 光线句 / 材质 / 收尾句，不堆质量词（显卡空着时上卡，否则纯 CPU）">✨ 扩写</button>
+          <select id="enh-count" title="要几个不同方向的版本">
+            <option value="1">1 版</option>
+            <option value="3" selected>3 版</option>
+          </select>
+          <select id="enh-lang" title="描述语言：中文场景建议「英文」—— 画面里要显示的中文用引号包住会自动保留">
+            <option value="en">英文</option>
+            <option value="zh">中文</option>
+          </select>
+          <button id="btn-lex" class="ghost" title="维度词库：点一下把该维度词拼进提示词">🏷 维度</button>
+          <button id="btn-clr" class="ghost" title="清空提示词">清空</button>
+        </div>
+        <div id="lex-panel"></div>
+        <div id="enh-variants"></div>
+        <div id="enh-note" style="font-size:11.5px;color:var(--tx3);margin-top:7px;display:none"></div>
+
+        <!-- 负向 -->
+        <label class="f">负向提示词 <span class="hint">（不想出现的东西，可留空）</span></label>
+        <input type="text" id="negative" placeholder="blurry, low quality, distorted face, extra limbs, watermark">
+
+        <!-- 风格预设（纯提示词，不需要 LoRA） -->
+        <div id="style-box" style="margin-top:16px">
+          <div style="font-size:11.5px;color:var(--tx3);margin-bottom:4px;display:flex;align-items:center;gap:8px">
+            <span>风格预设 <span style="color:#6b7688">（纯提示词，加在提示词最前面）</span></span>
+            <label class="chk" id="style-nsfw-wrap" style="margin-left:auto;display:none">
+              <input type="checkbox" id="style-nsfw" checked> 显示成人向
+            </label>
+          </div>
+          <select id="style" title="17 条全部实测生效；其中 4 条做过 3 种子命中率 100%；加速档下同样成立"></select>
+          <div id="style-note" style="font-size:11px;color:var(--tx3);line-height:1.6;margin-top:6px"></div>
+        </div>
+
+        <!-- 参数 -->
+        <label class="f" style="margin-top:18px">参数 <span class="hint" id="recipe-hint"></span></label>
+
+        <div id="wh-box" class="row" style="margin-bottom:10px">
+          <div>
+            <div style="font-size:11.5px;color:var(--tx3);margin-bottom:4px">宽度</div>
+            <select id="width"></select>
+          </div>
+          <div>
+            <div style="font-size:11.5px;color:var(--tx3);margin-bottom:4px">高度</div>
+            <select id="height"></select>
+          </div>
+        </div>
+
+        <div id="res-box" style="display:none;margin-bottom:10px">
+          <div style="font-size:11.5px;color:var(--tx3);margin-bottom:4px">长边分辨率 <span style="color:#6b7688">（输出尺寸跟随参考图）</span></div>
+          <select id="resolution"></select>
+        </div>
+
+        <!-- 姿势编辑（Fisher Pose + VNCCS PoseStudio LoRA） -->
+        <div id="pose-box" style="display:none;margin:12px 0 0">
+          <div style="font-size:11.5px;color:var(--tx3);margin-bottom:4px">
+            姿势 <span style="color:#6b7688">（拖 3D 人偶，或从 209 张内置骨架里挑）</span>
+          </div>
+          <button id="btn-pose" class="primary wide" style="margin-top:2px">🧍 打开姿势编辑器</button>
+          <div id="pose-state" style="font-size:11px;color:var(--tx3);line-height:1.6;margin-top:7px">
+            还没摆姿势 —— 点上面的按钮，在里面选一张骨架图或自己拖人偶。
+          </div>
+          <img id="pose-thumb" alt="人偶姿态图" style="display:none;width:100%;margin-top:8px;border-radius:8px;border:1px solid var(--line)">
+        </div>
+
+        <div id="lora-box" style="margin:12px 0 0">
+          <div style="font-size:11.5px;color:var(--tx3);margin-bottom:4px">LoRA <span style="color:#6b7688">（可留空）</span></div>
+          <select id="lora" title="挂在底座模型上的额外权重"></select>
+          <div id="lora-w-wrap" style="display:none;margin-top:8px">
+            <div style="font-size:11.5px;color:var(--tx3);margin-bottom:4px">LoRA 权重</div>
+            <div class="slider"><input type="range" id="lora-w" min="0" max="2" step="0.05" value="1"><span class="val" id="lora-w-v">1.00</span></div>
+          </div>
+          <label class="chk" id="lora-turbo-wrap" style="display:none">
+            <input type="checkbox" id="lora-turbo" checked> 加速档
+            <span id="lora-turbo-x" style="color:#6b7688"></span>
+          </label>
+          <div id="turbo-steps-wrap" style="display:none;margin-top:8px">
+            <div style="font-size:11.5px;color:var(--tx3);margin-bottom:4px">加速档预设
+              <span style="color:#6b7688">（官方 sigma 表）</span></div>
+            <select id="turbo-steps" title="官方给的 raw sigma 节点表；步数和表是一体的，不能随便填数"></select>
+          </div>
+          <div id="lora-note" style="font-size:11px;color:var(--tx3);line-height:1.6;margin-top:7px"></div>
+        </div>
+
+        <div style="font-size:11.5px;color:var(--tx3);margin:2px 0 4px">采样步数</div>
+        <div class="slider"><input type="range" id="steps" min="4" max="40" step="1" value="15"><span class="val" id="steps-v">15</span></div>
+
+        <div style="font-size:11.5px;color:var(--tx3);margin:12px 0 4px">CFG 引导强度</div>
+        <div class="slider"><input type="range" id="cfg" min="0" max="6" step="0.1" value="1.0"><span class="val" id="cfg-v">1.0</span></div>
+
+        <div class="row" style="margin-top:12px">
+          <div>
+            <div style="font-size:11.5px;color:var(--tx3);margin-bottom:4px">采样器</div>
+            <select id="sampler">
+              <option value="res_multistep">res_multistep（推荐）</option>
+              <option value="euler">euler（官方）</option>
+              <option value="euler_ancestral">euler_ancestral</option>
+              <option value="dpmpp_2m">dpmpp_2m</option>
+              <option value="uni_pc">uni_pc</option>
+            </select>
+          </div>
+          <div>
+            <div style="font-size:11.5px;color:var(--tx3);margin-bottom:4px">调度器</div>
+            <select id="scheduler">
+              <option value="simple">simple</option>
+              <option value="normal">normal</option>
+              <option value="beta">beta</option>
+              <option value="kl_optimal">kl_optimal</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="font-size:11.5px;color:var(--tx3);margin:12px 0 4px">随机种子 <span style="color:#6b7688">（-1 = 每次随机）</span></div>
+        <div style="display:flex;gap:8px">
+          <input type="number" id="seed" value="-1" style="flex:1">
+          <button class="mini" id="btn-rand" title="换一个随机种子">🎲</button>
+        </div>
+
+        <div class="row" style="margin-top:12px">
+          <div>
+            <div style="font-size:11.5px;color:var(--tx3);margin-bottom:4px">一次生成张数</div>
+            <select id="batch" title="同一个提示词，一次采样出 N 张（共用一次模型加载，比跑 N 次快）">
+              <option value="1">1 张</option>
+              <option value="2">2 张</option>
+              <option value="3">3 张</option>
+              <option value="4">4 张</option>
+            </select>
+          </div>
+          <div>
+            <div style="font-size:11.5px;color:var(--tx3);margin-bottom:4px">&nbsp;</div>
+            <div style="font-size:11px;color:var(--tx3);line-height:1.5;padding-top:9px">
+              同一提示词<br>一次出 N 张
+            </div>
+          </div>
+        </div>
+
+        <label class="chk"><input type="checkbox" id="autofree"> 出图后自动释放显存 <span style="color:#6b7688">（连续同档位出图别勾）</span></label>
+
+        <button class="primary wide" id="btn-go">开始生成</button>
+        <div class="btns">
+          <button id="btn-stop" class="ghost" disabled>⏹ 中断当前</button>
+          <button id="btn-free" class="ghost">🧹 释放显存</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">提示词助手 <span class="sub">写不出词就点它</span></div>
+      <div class="card-b" style="font-size:12.5px;color:var(--tx2);line-height:1.85;padding-top:12px">
+        · <b style="color:var(--tx)">🏷 维度</b>：镜头 / 光线 / 胶片 / 构图 / 氛围 / 材质 /
+        抓拍机位 / 前景遮挡 / 抓拍质感 / 被抓包瞬间，点一下拼进提示词。<br>
+        · <b style="color:var(--tx)">模板</b>（虚线框）：一键套用整段风格模板，<b style="color:var(--tx)">会把提示框里已有的内容当作角色描述</b>填进 {subject}。<br>
+        · <b style="color:var(--tx)">✨ 扩写</b>：按 Qwen 官方八步法把一句话补成完整描述 ——
+        补位置短语、光线句、材质、收尾句，<b style="color:var(--tx)">不堆质量词</b>。<br>
+        · 扩写可选 <b style="color:var(--tx)">1 版 / 3 版</b>：3 版会给写实摄影、电影感、插画平面三个不同方向，点卡片选用。<br>
+        · 描述语言选 <b style="color:var(--tx)">中文</b> 就直接出中文提示词（模型对英文更准，但中文也能跑）。<br>
+        · 扩写走官方 PE-T2I 模型（Qwen3.5-VL-9B 微调）：显卡空着时自动上卡，被占则退回纯 CPU。<br>
+        · 实测耗时：1 版约 85~110 秒，3 版约 150~210 秒（纯 CPU）。
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">显存提示 <span class="sub">8GB 卡的铁律</span></div>
+      <div class="card-b" style="font-size:12.5px;color:var(--tx2);line-height:1.85;padding-top:12px">
+        · <b style="color:var(--tx)">同档位连续出图不要释放显存</b>，模型复用更快。<br>
+        · 换档位或上 1280+ 分辨率前，先点「释放显存」。<br>
+        · 1536 能跑但余量只剩 ~500MB，跑完请立刻释放。<br>
+        · ComfyUI 与 Ollama 抢同一块卡，润色走纯 CPU 不影响出图。
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 右：结果 ============ -->
+  <div>
+    <div class="card">
+      <div class="card-h" id="stage-h">结果 <span class="sub" id="stage-sub">等待任务</span></div>
+      <div class="stage" id="stage">
+        <div class="ph" id="ph">
+          <div class="big">◈</div>
+          <h3>还没有出图</h3>
+          <p>左侧写好提示词，点「开始生成」。</p>
+          <p style="margin-top:14px">纯本地推理，<kbd>不联网</kbd>、<kbd>不上传</kbd>，模型跑在你自己的 8GB 显卡上。</p>
+        </div>
+        <div class="prog" id="prog" style="display:none">
+          <div class="t" id="prog-t">排队中…</div>
+          <div class="bar"><span></span></div>
+          <div class="s" id="prog-s">已用时 0.0s</div>
+        </div>
+      </div>
+      <div class="info" id="info" style="display:none"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">历史记录 <span class="sub" id="hist-sub">0 张</span>
+        <button class="mini ghost" id="btn-refresh" style="margin-left:8px">刷新</button>
+        <button class="mini ghost" id="btn-clrh" style="margin-left:6px">清空</button>
+      </div>
+      <div class="grid" id="hist"><div class="empty" style="grid-column:1/-1">暂无记录</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="modal">
+  <div class="box">
+    <img id="m-img" alt="">
+    <div class="acts">
+      <button class="primary" id="m-dl">⬇ 下载原图</button>
+      <button id="m-copy">📋 复制参数</button>
+      <button class="ghost" id="m-close">关闭</button>
+    </div>
+    <textarea id="m-meta" readonly style="display:none"></textarea>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const el = (t, c, x) => { const n = document.createElement(t); if (c) n.className = c; if (x != null) n.textContent = x; return n; };
+
+const S = {
+  mode: "t2i",
+  cfg: null,          // /api/config
+  ref: null,          // {name, subfolder, type, ref, url}
+  pose: null,         // 姿势档的 pose_json 字符串（含人偶图 base64）
+  job: null,
+  timer: null,
+  t0: 0,
+  polling: false,
+  hist: [],
+};
+
+function toast(msg, kind) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.className = "show " + (kind || "");
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.className = "", kind === "err" ? 5200 : 2800);
+}
+
+function fmtTime(ts) {
+  const d = new Date(ts * 1000);
+  const p = n => String(n).padStart(2, "0");
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function imgURL(im) {
+  const q = new URLSearchParams({
+    filename: im.filename || "",
+    subfolder: im.subfolder || "",
+    type: im.type || "output",
+  });
+  return "/image?" + q.toString();
+}
+
+/* ---------------- 初始化 ---------------- */
+async function boot() {
+  try {
+    S.cfg = await (await fetch("/api/config")).json();
+  } catch (e) {
+    toast("读取配置失败，请确认后端已启动", "err");
+    return;
+  }
+  // 分辨率下拉
+  const presets = S.cfg.res_presets || [768, 1024, 1280];
+  for (const r of presets) {
+    $("#width").appendChild(new Option(r + " × " + r, r));
+    $("#height").appendChild(new Option(r + " × " + r, r));
+    $("#resolution").appendChild(new Option(r + "（长边）", r));
+  }
+  $("#width").value = 1024; $("#height").value = 1024; $("#resolution").value = 1024;
+  $("#prompt").placeholder = "例如：赛博朋克风格的雨夜东京街头，霓虹灯倒映在湿漉漉的柏油路上，电影感打光";
+
+  document.querySelectorAll(".tab").forEach(t =>
+    t.addEventListener("click", () => setMode(t.dataset.mode)));
+
+  // 滑杆联动
+  const bind = (id, dec) => {
+    const r = $("#" + id), v = $("#" + id + "-v");
+    const upd = () => v.textContent = dec ? Number(r.value).toFixed(dec) : r.value;
+    r.addEventListener("input", upd); upd();
+  };
+  bind("steps", 0); bind("cfg", 1); bind("lora-w", 2);
+  renderLoras();
+  renderStyles();
+  renderLan();
+  $("#lora").onchange = syncLoraUI;
+  $("#lora-turbo").onchange = syncLoraUI;
+  $("#turbo-steps").onchange = syncLoraUI;
+  $("#style").onchange = syncStyleUI;
+  $("#style-nsfw").onchange = renderStyles;
+
+  $("#btn-rand").onclick = () => { $("#seed").value = Math.floor(Math.random() * 2 ** 31); };
+  $("#btn-go").onclick = generate;
+  $("#btn-stop").onclick = interrupt;
+  $("#btn-free").onclick = freeMem;
+  $("#btn-pose").onclick = openPoseEditor;
+  $("#btn-refresh").onclick = loadHist;
+  $("#btn-clrh").onclick = clearHist;
+  $("#btn-enh").onclick = enhance;
+  $("#btn-lex").onclick = renderLex;
+  $("#btn-clr").onclick = () => { $("#prompt").value = ""; hideVariants(); };
+
+  // 上传
+  $("#drop").onclick = () => $("#file").click();
+  $("#file").onchange = e => { if (e.target.files[0]) upload(e.target.files[0]); };
+  const dp = $("#drop");
+  ["dragenter", "dragover"].forEach(ev => dp.addEventListener(ev, e => { e.preventDefault(); dp.classList.add("over"); }));
+  ["dragleave", "drop"].forEach(ev => dp.addEventListener(ev, e => { e.preventDefault(); dp.classList.remove("over"); }));
+  dp.addEventListener("drop", e => { const f = e.dataTransfer.files[0]; if (f) upload(f); });
+  $("#thumb-x").onclick = () => clearRef();
+
+  // 弹窗
+  $("#m-close").onclick = () => $("#modal").classList.remove("show");
+  $("#modal").onclick = e => { if (e.target.id === "modal") $("#modal").classList.remove("show"); };
+  $("#m-copy").onclick = () => {
+    const ta = $("#m-meta");
+    ta.style.display = "block"; ta.select();
+    navigator.clipboard.writeText(ta.value).then(
+      () => toast("参数已复制", "ok"), () => toast("复制失败，请手动选中", "err"));
+  };
+
+  // 支持 #t2i / #edit / #bgremove 直接进对应档位（可收藏、可分享）
+  const h = (location.hash || "").replace("#", "");
+  setMode(S.cfg.recipes[h] ? h : "t2i");
+  window.addEventListener("hashchange", () => {
+    const m = (location.hash || "").replace("#", "");
+    if (S.cfg.recipes[m]) setMode(m);
+  });
+  health(); setInterval(health, 6000);
+  loadHist();
+  // 默认**不**自动释放显存 —— 保持模型驻留，连续出图不用每次重新加载（第一次出图后模型就常驻了）
+  $("#autofree").checked = false;
+}
+
+/* ---------------- 模式切换 ---------------- */
+function setMode(m) {
+  S.mode = m;
+  if (location.hash !== "#" + m) history.replaceState(null, "", "#" + m);
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("act", t.dataset.mode === m));
+  const r = S.cfg.recipes[m];
+  const isPose = m === "pose";
+  const isRef = m !== "t2i";
+
+  $("#refbox").style.display = isRef ? "block" : "none";
+  $("#wh-box").style.display = (m === "t2i" || isPose) ? "grid" : "none";
+  $("#res-box").style.display = (m === "edit" || m === "bgremove") ? "block" : "none";
+  $("#pose-box").style.display = isPose ? "block" : "none";
+  // 姿势档的 LoRA 写死在模板里（VNCCS PoseStudio），不给换 —— 换别的画面必崩
+  $("#lora-box").style.display = isPose ? "none" : "block";
+  $("#lbl-ref").innerHTML = isPose
+    ? '人物参考图 <span class="hint">（要重画到这个姿势上的那个人）</span>'
+    : '参考图 <span class="hint">（拖进来或点击选择，建议 ≥768px）</span>';
+
+  $("#steps").value = r.steps; $("#steps-v").textContent = r.steps;
+  $("#cfg").value = r.cfg; $("#cfg-v").textContent = Number(r.cfg).toFixed(1);
+  $("#sampler").value = r.sampler;
+  $("#scheduler").value = r.scheduler;
+  $("#recipe-hint").textContent = `（本档实测最优：${r.steps} 步 / cfg ${r.cfg} / ${r.sampler}）`;
+
+  const lbl = { t2i: "提示词", edit: "编辑指令", bgremove: "提示词", pose: "补充要求" }[m];
+  $("#lbl-prompt").innerHTML = lbl + ' <span class="hint">' + (
+    m === "edit" ? "（说清楚改什么、保留什么）" :
+    m === "bgremove" ? "（留空则用默认抠图指令）" :
+    m === "pose" ? "（建议英文，另起一行附在 LoRA 固定指令后面）" :
+    "（中文也行，模型对英文更准）") + '</span>';
+  $("#prompt").placeholder = {
+    t2i: "例如：赛博朋克风格的雨夜东京街头，霓虹灯倒映在湿漉漉的柏油路上，电影感打光",
+    edit: "例如：把背景换成雨夜霓虹的东京街头，保持人物的脸、发型、姿势和外套完全不变",
+    bgremove: "Remove the background, and output a PNG image",
+    pose: "realistic photography, natural skin texture, soft studio light, full body fashion photography, clean gray background",
+  }[m];
+  if (m === "bgremove" && !$("#prompt").value.trim()) $("#prompt").value = S.cfg.bgremove_prompt;
+  if (m === "edit" && $("#prompt").value.trim() === S.cfg.bgremove_prompt) $("#prompt").value = "";
+  syncLoraUI();
+  syncStyleUI();
+  if (isPose) syncPoseUI();
+}
+
+/* ---------------- LoRA ---------------- */
+function curLora() {
+  const f = $("#lora").value;
+  return (S.cfg.loras || []).find(x => x.file === f) || null;
+}
+function turboOn() {
+  const L = curLora();
+  return !!(L && L.turbo && $("#lora-turbo").checked);
+}
+/* 当前选中的加速档步数。只认该 LoRA 支持的官方预设，非法值回落到 LoRA 默认档。 */
+function curTurboSteps() {
+  const L = curLora();
+  if (!L || !L.turbo) return null;
+  const v = Number($("#turbo-steps").value);
+  return (L.schedules || []).includes(v) ? v : (L.steps || 6);
+}
+function renderTurboSteps() {
+  const L = curLora();
+  const sel = $("#turbo-steps");
+  const all = S.cfg.turbo_schedules || {};
+  sel.innerHTML = "";
+  ((L && L.schedules) || []).forEach(n => {
+    const info = all[String(n)] || {};
+    sel.appendChild(new Option(info.label || (n + " 步"), n));
+  });
+  if (L && L.steps != null) sel.value = String(L.steps);
+}
+
+/* ---------------- 风格预设 ---------------- */
+/* 当前选中的风格 key；空串 = 不选。抠图档不吃风格，直接返回空。 */
+function curStyle() {
+  if (S.mode === "bgremove") return "";
+  return $("#style").value || "";
+}
+function styleMeta(key) {
+  return (S.cfg.styles || []).find(x => x.key === key) || null;
+}
+function renderStyles() {
+  const sel = $("#style");
+  const prev = sel.value;
+  const showNsfw = $("#style-nsfw").checked;
+  sel.innerHTML = "";
+  sel.appendChild(new Option("不选风格（只用你写的提示词）", ""));
+  (S.cfg.styles || []).forEach(x => {
+    if (x.nsfw && !showNsfw) return;
+    sel.appendChild(new Option((x.nsfw ? "🔒 " : "") + x.label, x.key));
+  });
+  // 换筛选后原来的选择可能已经不在列表里（比如选了成人向又关掉开关）→ 回落「不选」
+  sel.value = [...sel.options].some(o => o.value === prev) ? prev : "";
+  syncStyleUI();
+}
+function syncStyleUI() {
+  const key = curStyle();
+  const m = styleMeta(key);
+  const hasNsfw = (S.cfg.styles || []).some(x => x.nsfw);
+  $("#style-nsfw-wrap").style.display = hasNsfw ? "flex" : "none";
+  $("#style-box").style.display = (S.mode === "bgremove") ? "none" : "block";
+  const note = $("#style-note");
+  if (!m) {
+    note.innerHTML = "不选则只用你自己写的提示词。";
+  } else {
+    note.innerHTML = `<b>${m.label}</b>：${m.tip || ""}`
+      + `<br><span style="color:#6b7688">实际会加在最前面：`
+      + `${(m.block || "").slice(0, 88)}…</span>`;
+  }
+}
+
+function renderLoras() {
+  const sel = $("#lora");
+  sel.innerHTML = "";
+  sel.appendChild(new Option("不使用（底座原味）", ""));
+  const list = S.cfg.loras || [];
+  const turbo = list.filter(x => x.turbo);
+  const plain = list.filter(x => !x.turbo);
+  const grp = (label, arr) => {
+    if (!arr.length) return;
+    const g = document.createElement("optgroup");
+    g.label = label;
+    arr.forEach(x => g.appendChild(new Option(`${x.label} · ${x.size_mb} MB`, x.file)));
+    sel.appendChild(g);
+  };
+  grp("加速 LoRA（配 viggle sigma 表）", turbo);
+  grp("其他 LoRA（合并进权重）", plain);
+  // 默认挂加速 LoRA（6 步档）—— 出图最快，画质实测不降反升。
+  // 注意 syncLoraUI() 会读这里的选择去锁步数，所以默认值必须在 setMode() 之前定好。
+  sel.value = turbo.length ? turbo[0].file : "";
+}
+
+function syncLoraUI() {
+  const L = curLora();
+  const r = S.cfg.recipes[S.mode];
+  // 只在「换了 LoRA」时重建步数下拉，否则每次调用都会把用户选的档冲掉
+  if (S.stepsFor !== $("#lora").value) {
+    S.stepsFor = $("#lora").value;
+    renderTurboSteps();
+  }
+  // 姿势档不参与加速档：VNCCS 姿势 LoRA 和 viggle-turbo 是两套不同的东西，
+  // 叠加会互相打架；而且这一档要的是官方 25 步 / cfg 1 / euler。
+  const lock = turboOn() && S.mode !== "pose";
+  const ts = lock ? curTurboSteps() : null;
+  const sch = (S.cfg.turbo_schedules || {})[String(ts)] || {};
+
+  $("#lora-w-wrap").style.display = L ? "block" : "none";
+  $("#lora-turbo-wrap").style.display = (L && L.turbo) ? "flex" : "none";
+  $("#turbo-steps-wrap").style.display = (L && L.turbo && lock) ? "block" : "none";
+  $("#lora-turbo-x").textContent = `（本档实测约 ${r.turbo_speedup || 2} 倍速）`;
+
+  const note = $("#lora-note");
+  if (!L) {
+    note.textContent = "";
+  } else if (lock) {
+    note.innerHTML = `加速档：<b>${ts} 步</b> · euler · viggle sigma 表。`
+      + (sch.note ? sch.note + "。" : "")
+      + "CFG 与负向词在这一档<b>不生效</b>（单次模型调用，没有 classifier-free guidance），"
+      + "步数 / 采样器 / 调度器也由 LoRA 决定。";
+  } else if (L.turbo) {
+    note.textContent = "加速档已关：LoRA 照挂，但走经典采样。官方不推荐这样用 —— 它是 DMD 蒸馏的少步模型，配错调度器画面会脏。";
+  } else {
+    note.textContent = "普通 LoRA：合并进权重，按本档常规参数采样。";
+  }
+
+  // 加速档下这四项由 LoRA 接管，置灰免得误导
+  ["steps", "cfg", "sampler", "scheduler"].forEach(id => { $("#" + id).disabled = lock; });
+
+  // 只在锁定状态发生变化时改写数值，避免用户调 LoRA 时把手工选的参数冲掉
+  const prev = S.loraLock;
+  S.loraLock = lock;
+  if (lock) {
+    $("#steps").value = ts; $("#steps-v").textContent = ts;
+    $("#cfg").value = 1.0; $("#cfg-v").textContent = "1.0";
+    $("#sampler").value = "euler";
+    const sc = $("#scheduler");
+    if (![...sc.options].some(o => o.value === "__viggle__")) {
+      sc.appendChild(new Option("viggle sigma（加速档专用）", "__viggle__"));
+    }
+    sc.value = "__viggle__";
+  } else if (prev) {
+    $("#steps").value = r.steps; $("#steps-v").textContent = r.steps;
+    $("#cfg").value = r.cfg; $("#cfg-v").textContent = Number(r.cfg).toFixed(1);
+    $("#sampler").value = r.sampler;
+    $("#scheduler").value = r.scheduler;
+  }
+  $("#recipe-hint").textContent = lock
+    ? `（加速档：${ts} 步 / euler / viggle sigma，实测约为 ${r.steps} 步基线的 ${r.turbo_speedup || 2} 倍速）`
+    : `（本档实测最优：${r.steps} 步 / cfg ${r.cfg} / ${r.sampler}）`;
+
+  // 标签页耗时跟着档位走
+  document.querySelectorAll(".tab em").forEach(e => {
+    e.textContent = lock ? (e.dataset.turbo || e.dataset.base) : (e.dataset.base || e.textContent);
+  });
+}
+
+/* ---------------- 局域网地址 ---------------- */
+function renderLan() {
+  const url = S.cfg.lan_url || "";
+  const chip = $("#p-lan");
+  if (!url) {                       // 仅本机模式：不显示
+    chip.style.display = "none";
+    return;
+  }
+  $("#lan-txt").textContent = url.replace(/^https?:\/\//, "");
+  chip.style.display = "flex";
+  chip.onclick = () => {
+    navigator.clipboard.writeText(url).then(
+      () => toast("已复制 " + url + " —— 手机浏览器打开它（需同一 WiFi）", "ok"),
+      () => toast("复制失败，手动记一下：" + url, "err"));
+  };
+}
+
+/* ---------------- 健康检查 ---------------- */
+async function health() {
+  try {
+    const h = await (await fetch("/api/health")).json();
+    setPill("#p-comfy", h.comfy, h.comfy ? "ComfyUI 在线" : "ComfyUI 未响应");
+    setPill("#p-ollama", h.ollama,
+      !h.ollama ? "Ollama 未启动"
+        : (h.pe ? "扩写：官方 PE-T2I" : "扩写：通用模型"));
+  } catch (e) {
+    setPill("#p-comfy", false, "后端断开");
+    setPill("#p-ollama", false, "后端断开");
+  }
+  try {
+    const q = await (await fetch("/api/queue")).json();
+    const run = (q.queue_running || []).length, pend = (q.queue_pending || []).length;
+    const p = $("#p-queue"), t = $("#q-txt");
+    if (run || pend) { p.className = "pill on"; t.textContent = `队列 ${run} 运行 / ${pend} 等待`; }
+    else { p.className = "pill"; t.textContent = "队列空闲"; }
+  } catch (e) { /* ignore */ }
+}
+function setPill(sel, ok, txt) {
+  const p = $(sel);
+  p.className = "pill " + (ok ? "on" : "off");
+  p.querySelector("span").textContent = txt;
+}
+
+/* ---------------- 上传参考图 ---------------- */
+function clearRef() {
+  S.ref = null;
+  $("#thumb").style.display = "none";
+  $("#file").value = "";
+  $("#drop-txt").textContent = "点击选择图片，或拖拽到此处";
+}
+async function upload(file) {
+  if (!file.type.startsWith("image/")) return toast("请选择图片文件", "err");
+  if (file.size > 24 * 1024 * 1024) return toast("图片超过 24MB", "err");
+  const drop = $("#drop");
+  drop.querySelector("#drop-txt").textContent = "上传中…";
+  try {
+    const b64 = await new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onload = () => res(fr.result);
+      fr.onerror = () => rej(new Error("读取失败"));
+      fr.readAsDataURL(file);
+    });
+    const r = await fetch("/api/upload", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: file.name, data: b64 }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || "上传失败");
+    S.ref = { ...j, url: imgURL({ filename: j.name, subfolder: j.subfolder, type: j.type }) };
+    $("#thumb-img").src = S.ref.url;
+    $("#thumb-nm").textContent = `${file.name}  ·  ${(file.size / 1024).toFixed(0)} KB`;
+    $("#thumb").style.display = "block";
+    $("#drop-txt").textContent = "已上传，点击可更换";
+    toast("参考图已就绪", "ok");
+  } catch (e) {
+    $("#drop-txt").textContent = "点击选择图片，或拖拽到此处";
+    toast("上传失败：" + e.message, "err");
+  }
+}
+
+/* ---------------- 提示词助手：维度词库 + 扩写 ---------------- */
+let LEX = null;
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+async function renderLex() {
+  const panel = $("#lex-panel");
+  if (panel.classList.contains("on")) { panel.classList.remove("on"); return; }
+  if (!LEX) {
+    try {
+      const r = await fetch("/api/lexicon");
+      LEX = await r.json();
+    } catch (e) { return toast("词库加载失败", "err"); }
+  }
+  // 「画幅」组暂不进面板：尺寸下拉目前只支持正方形
+  const groups = (LEX.groups || []).filter(g => g.key !== "ratio");
+  const presets = LEX.presets || [];
+  const presHtml = presets.length
+    ? '<div class="lex-g"><b>模板</b>' + presets.map(p =>
+        '<span class="lex-pres" data-k="' + esc(p.key) + '" title="' +
+        esc(p.desc) + '">' + esc(p.label) + '</span>').join("") +
+      '</div><div class="lex-sep"></div>'
+    : "";
+  panel.innerHTML = presHtml + groups.map(g =>
+    '<div class="lex-g"><b>' + esc(g.label) + '</b>' +
+    g.items.map(t => '<span class="lex-t">' + esc(t) + '</span>').join("") +
+    '</div>').join("");
+  panel.querySelectorAll(".lex-t").forEach(el => {
+    el.onclick = () => appendTerm(el.textContent);
+  });
+  panel.querySelectorAll(".lex-pres").forEach(el => {
+    el.onclick = () => applyPreset(presets.find(p => p.key === el.dataset.k));
+  });
+  panel.classList.add("on");
+}
+
+/* 套用风格模板：{subject} 换成提示框里已有的内容；没写就留个占位提示。
+   负向框为空时顺带填上模板自带的压制词（模型会自动性感化漂移，默认 negative 是空的）。 */
+function applyPreset(p) {
+  if (!p) return;
+  const ta = $("#prompt");
+  const cur = ta.value.trim();
+  ta.value = p.text.replace(/\{subject\}/g, cur || "【在这里填角色名或描述】");
+  let extra = "";
+  const neg = $("#negative");
+  if (p.negative && !neg.value.trim()) {
+    neg.value = p.negative;
+    extra = "，并填了负向词";
+  }
+  ta.focus();
+  toast("已套用「" + p.label + "」模板" + extra + "；改掉方括号里的内容即可", "ok");
+}
+
+function appendTerm(t) {
+  const ta = $("#prompt");
+  const cur = ta.value.replace(/[,\s]+$/, "");
+  ta.value = cur ? cur + ", " + t : t;
+  ta.focus();
+}
+
+function hideVariants() { $("#enh-variants").classList.remove("on"); }
+
+async function enhance() {
+  const text = $("#prompt").value.trim();
+  if (!text) return toast("先写点想法再扩写", "err");
+  const btn = $("#btn-enh"), note = $("#enh-note");
+  const count = +$("#enh-count").value;
+  const lang = $("#enh-lang").value;
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = "扩写中…";
+  hideVariants();
+  note.style.display = "block";
+  note.textContent = count > 1
+    ? "正在生成 " + count + " 个方向的版本，约需 2~4 分钟（纯 CPU 时更久），别关页面…"
+    : "正在扩写，约需 1~2 分钟（纯 CPU 时更久）…";
+  try {
+    const r = await fetch("/api/enhance", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: S.mode, prompt: text, count, lang }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || "扩写失败");
+    const list = j.prompts || [];
+    const tip = j.note ? " ｜ " + j.note : "";
+    if (list.length <= 1) {
+      if (list[0]) $("#prompt").value = list[0].text;
+      note.textContent = "✓ " + (j.source_label || j.source) + tip;
+    } else {
+      renderVariants(list);
+      note.textContent = "✓ " + (j.source_label || j.source) + " ｜ 点一张卡片填入提示词" + tip;
+    }
+  } catch (e) {
+    toast("扩写失败：" + e.message, "err");
+    note.textContent = "✗ " + e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = old;
+  }
+}
+
+function renderVariants(list) {
+  const box = $("#enh-variants");
+  box.innerHTML = list.map((v, i) =>
+    '<div class="var-card" data-i="' + i + '"><b>' + esc(v.label) + '</b><p>' +
+    esc(v.text) + '</p></div>').join("");
+  box.querySelectorAll(".var-card").forEach(el => {
+    el.onclick = () => {
+      const v = list[+el.dataset.i];
+      $("#prompt").value = v.text;
+      toast("已填入「" + v.label + "」", "ok");
+      box.classList.remove("on");
+    };
+  });
+  box.classList.add("on");
+}
+
+/* ---------------- 姿势编辑器（Fisher Pose，iframe 内嵌） ----------------
+   编辑器页面由本服务的 /fisher/ 路由代理。
+   ⚠️ 必须同源：插件用 postMessage 握手，freepose.mjs 里是
+      `event.origin !== location.origin` 就直接丢弃消息 —— iframe 指到 8188 会永远卡在
+      「正在加载 MakeHuman 人体」。
+   协议（见插件的 web/editor/freepose.mjs）：
+      宿主 → iframe : {type:"fisher-load", payload:{pose_json, extra_prompt, referencePreview}}
+      iframe → 宿主 : {type:"fisher-ready"} / {type:"fisher-apply", payload:{pose_json,...}}
+                      / {type:"fisher-close"}
+   embedded 模式下编辑器不自己开文件选择器，要靠宿主注入
+   frame.fisherChooseReference / frame.fisherChooseFiles。
+------------------------------------------------------------------------- */
+const POSE_URL = "/fisher/editor/freepose.html?embedded=1";
+let poseDlg = null;
+
+function syncPoseUI() {
+  const st = $("#pose-state"), th = $("#pose-thumb");
+  if (!S.pose) {
+    st.textContent = "还没摆姿势 —— 点上面的按钮，在里面选一张骨架图或自己拖人偶。";
+    th.style.display = "none"; th.removeAttribute("src");
+    return;
+  }
+  let ref = "";
+  try { ref = JSON.parse(S.pose).poseReference || ""; } catch (e) { ref = ""; }
+  if (ref.startsWith("data:image/png;base64,")) { th.src = ref; th.style.display = "block"; }
+  else th.style.display = "none";
+  st.innerHTML = "✓ 已有姿势（人偶图见下）。想换动作就再点一次编辑器。";
+}
+
+function openPoseEditor() {
+  if (poseDlg) return;
+
+  const dlg = document.createElement("dialog");
+  dlg.style.cssText = "width:96vw;max-width:1700px;height:94vh;max-height:1100px;"
+    + "padding:0;border:1px solid var(--line);border-radius:12px;background:#0e121a;overflow:hidden;";
+  const frame = document.createElement("iframe");
+  frame.title = "Fisher 自由姿势编辑器";
+  frame.style.cssText = "border:0;width:100%;height:100%;display:block";
+  frame.src = POSE_URL;
+  dlg.appendChild(frame);
+  document.body.appendChild(dlg);
+
+  // 编辑器要的文件选择器钩子（必须在用户点击的同步调用链里 click()，否则弹不出来）
+  const pickRef = document.createElement("input");
+  pickRef.type = "file"; pickRef.accept = "image/*"; pickRef.hidden = true;
+  dlg.appendChild(pickRef);
+  frame.fisherChooseReference = onFile => {
+    pickRef.value = "";
+    pickRef.onchange = () => { const f = pickRef.files[0]; if (f) onFile(f); };
+    pickRef.click();
+  };
+  frame.fisherChooseFiles = (onFiles, { directory = false } = {}) => {
+    const p2 = document.createElement("input");
+    p2.type = "file"; p2.accept = "image/*"; p2.multiple = true;
+    p2.webkitdirectory = directory; p2.hidden = true;
+    p2.onchange = () => { if (p2.files.length) onFiles([...p2.files]); p2.remove(); };
+    dlg.appendChild(p2); p2.click();
+  };
+
+  const close = () => {
+    window.removeEventListener("message", onMsg);
+    try { dlg.close(); } catch (e) {}
+    dlg.remove();
+    poseDlg = null;
+  };
+  const onMsg = ev => {
+    if (ev.origin !== location.origin || ev.source !== frame.contentWindow) return;
+    const d = ev.data || {};
+    if (d.type === "fisher-ready") {
+      frame.contentWindow.postMessage({
+        type: "fisher-load",
+        payload: {
+          pose_json: S.pose || "{}",
+          extra_prompt: $("#prompt").value.trim(),
+          referencePreview: (S.ref && S.ref.url) ? S.ref.url : null,
+        },
+      }, location.origin);
+    } else if (d.type === "fisher-apply") {
+      const p = d.payload || {};
+      if (typeof p.pose_json !== "string") return;
+      S.pose = p.pose_json;
+      if (typeof p.extra_prompt === "string" && p.extra_prompt.trim())
+        $("#prompt").value = p.extra_prompt;
+      syncPoseUI();
+      close();
+      toast("姿势已应用 —— 上传人物参考图后点「开始生成」", "ok");
+    } else if (d.type === "fisher-close") {
+      close();
+    }
+  };
+  window.addEventListener("message", onMsg);
+  dlg.addEventListener("cancel", ev => { ev.preventDefault(); close(); });
+  dlg.showModal();
+  poseDlg = dlg;
+}
+
+/* ---------------- 生成 ---------------- */
+async function generate() {
+  if (S.polling) return toast("已有任务在跑，先等它结束或中断", "err");
+  if (S.mode !== "t2i" && !S.ref) return toast("这个模式需要先上传一张参考图", "err");
+  if (S.mode === "pose" && !S.pose) return toast("还没摆姿势 —— 先点「🧍 打开姿势编辑器」", "err");
+  const prompt = $("#prompt").value.trim();
+  // 姿势档的提示词是**可选**的：LoRA 固定指令 Draw character from image2 由节点自带，
+  // 这里填的只是「补充要求」（另起一行附在后面）。
+  if (!prompt && S.mode !== "bgremove" && S.mode !== "pose")
+    return toast("提示词不能为空", "err");
+
+  const payload = {
+    mode: S.mode,
+    prompt: prompt,
+    negative: $("#negative").value.trim(),
+    seed: Number($("#seed").value),
+    steps: Number($("#steps").value),
+    cfg: Number($("#cfg").value),
+    sampler: $("#sampler").value,
+    scheduler: $("#scheduler").value,
+  };
+  if (S.mode === "t2i") {
+    payload.width = Number($("#width").value);
+    payload.height = Number($("#height").value);
+  } else if (S.mode === "pose") {
+    payload.width = Number($("#width").value);
+    payload.height = Number($("#height").value);
+    payload.ref_image = S.ref.ref;
+    payload.pose_json = S.pose || "";
+  } else {
+    payload.resolution = Number($("#resolution").value);
+    payload.ref_image = S.ref.ref;
+  }
+  payload.count = Number($("#batch").value) || 1;
+
+  const sty = curStyle();
+  if (sty) payload.style = sty;
+
+  const L = curLora();
+  if (L) {
+    payload.lora = L.file;
+    payload.lora_weight = Number($("#lora-w").value);
+    if (L.turbo) {
+      payload.turbo = $("#lora-turbo").checked;
+      if (payload.turbo) payload.turbo_steps = curTurboSteps();
+    }
+  }
+
+  $("#btn-go").disabled = true;
+  showProg("提交任务…", "正在把工作流发给 ComfyUI");
+  try {
+    const r = await fetch("/api/generate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || "提交失败");
+    S.job = j.job;
+    S.t0 = Date.now();
+    $("#btn-stop").disabled = false;
+    startTimer();
+    poll(j.id);
+  } catch (e) {
+    hideProg();
+    $("#btn-go").disabled = false;
+    toast("生成失败：" + e.message, "err");
+  }
+}
+
+function startTimer() {
+  stopTimer();
+  S.timer = setInterval(() => {
+    $("#prog-s").textContent = "已用时 " + ((Date.now() - S.t0) / 1000).toFixed(1) + "s";
+  }, 120);
+}
+function stopTimer() { if (S.timer) { clearInterval(S.timer); S.timer = null; } }
+
+function showProg(t, s) {
+  $("#prog").style.display = "flex";
+  $("#ph").style.display = "none";
+  $("#prog-t").textContent = t;
+  $("#prog-s").textContent = s;
+}
+function hideProg() { $("#prog").style.display = "none"; }
+
+async function poll(id) {
+  S.polling = true;
+  let ticks = 0;
+  const iv = setInterval(async () => {
+    // 安全阀：最多轮询 40 分钟，避免异常情况下卡死「生成中」
+    if (++ticks > 2600) {
+      clearInterval(iv); S.polling = false; stopTimer(); hideProg();
+      $("#btn-go").disabled = false; $("#btn-stop").disabled = true;
+      toast("轮询超时，请检查 ComfyUI 后端窗口", "err");
+      return;
+    }
+    let st;
+    try {
+      st = await (await fetch("/api/status?id=" + encodeURIComponent(id))).json();
+    } catch (e) { return; }
+    if (st.state === "pending") {
+      $("#prog-t").textContent = "排队中…";
+      $("#prog-s").textContent = `前面还有 ${st.queue_position || 0} 个任务 ｜ 已用时 ${((Date.now() - S.t0) / 1000).toFixed(1)}s`;
+    } else if (st.state === "running") {
+      $("#prog-t").textContent = "正在采样…";
+    } else if (st.state === "done") {
+      clearInterval(iv); S.polling = false;
+      stopTimer(); hideProg();
+      $("#btn-go").disabled = false;
+      $("#btn-stop").disabled = true;
+      const job = st.job || S.job;
+      S.job = job;
+      showResult(job);
+      loadHist();
+      if ($("#autofree").checked) setTimeout(freeMem, 400);
+    } else if (st.state === "interrupted" || st.state === "error") {
+      clearInterval(iv); S.polling = false;
+      stopTimer(); hideProg();
+      $("#btn-go").disabled = false;
+      $("#btn-stop").disabled = true;
+      $("#stage-sub").textContent = st.state === "interrupted" ? "已中断" : "出错";
+      toast(st.state === "interrupted"
+        ? "任务已中断（中断后这次没有产物）"
+        : "执行出错：" + (st.job && st.job.error || "未知错误"),
+        "err");
+    }
+  }, 900);
+}
+
+function showResult(job) {
+  const imgs = job.images || [];
+  if (!imgs.length) { toast("任务完成但没拿到图片", "err"); return; }
+  const p = job.params || {};
+  const stage = $("#stage");
+  $("#ph").style.display = "none";
+  // 清掉上一次的结果（单张的 img.res 和多张的 .multi 容器）
+  stage.querySelectorAll("img.res, .multi").forEach(n => n.remove());
+
+  const urls = imgs.map(imgURL);
+  if (urls.length === 1) {
+    const img = el("img");
+    img.className = "res";
+    img.src = urls[0] + "&_=" + Date.now();
+    img.onclick = () => openModal(urls[0], job);
+    stage.appendChild(img);
+  } else {
+    const box = el("div", "multi");
+    urls.forEach((u, i) => {
+      const img = el("img");
+      img.src = u + "&_=" + Date.now() + "_" + i;
+      img.title = `第 ${i + 1} 张 · 点开大图`;
+      img.onclick = () => openModal(u, job);
+      box.appendChild(img);
+    });
+    box.appendChild(el("div", "cap",
+      `${urls.length} 张（同一个提示词，一次采样出图）· 点任意一张看大图`));
+    stage.appendChild(box);
+  }
+
+  $("#stage-h").firstChild.textContent = "结果 ";
+  $("#stage-sub").textContent =
+    `${job.mode_label} ｜ ${p.size || ""} ｜ ${urls.length} 张 ｜ 用时 ${job.elapsed || "?"}s`;
+
+  const info = $("#info");
+  info.style.display = "flex";
+  info.innerHTML = "";
+  const add = (k, v, cls) => {
+    const t = el("span", "tag" + (cls ? " " + cls : ""));
+    t.innerHTML = k + " <b>" + v + "</b>";
+    info.appendChild(t);
+  };
+  add("模式", job.mode_label);
+  if (p.style) {
+    const SM = styleMeta(p.style);
+    add("风格", SM ? SM.label : p.style, "ok");
+  }
+  if (p.lora) {
+    const LM = (S.cfg.loras || []).find(x => x.file === p.lora);
+    const sc = (S.cfg.turbo_schedules || {})[String(p.turbo_steps)] || {};
+    add(p.turbo ? "加速" : "LoRA",
+      (LM ? LM.label : p.lora.replace(/\.safetensors$/, "")) +
+      (p.turbo && p.turbo_steps ? " · " + p.turbo_steps + " 步" : "") +
+      (Number(p.lora_weight) !== 1 ? " @" + p.lora_weight : ""),
+      p.turbo ? "ok" : null);
+    if (p.turbo && sc.label) add("预设", sc.label);
+  }
+  if (p.size) add("尺寸", p.size);
+  if (urls.length > 1) add("张数", urls.length, "ok");
+  add("步数", p.steps);
+  add("CFG", p.cfg == null ? "关闭" : p.cfg);
+  add("采样器", p.sampler + " / " + p.scheduler);
+  add("种子", p.seed);
+  if (job.elapsed) add("耗时", job.elapsed + "s", "ok");
+  const sp = el("span", "spacer"); info.appendChild(sp);
+  const dl = el("button", "mini", urls.length > 1 ? `⬇ 下载全部 (${urls.length})` : "⬇ 下载");
+  dl.onclick = () => urls.forEach((u, i) =>
+    setTimeout(() => download(u, job, urls.length > 1 ? i + 1 : null), i * 350));
+  info.appendChild(dl);
+}
+
+function download(url, job, idx) {
+  const a = document.createElement("a");
+  a.href = url;
+  const seed = job.params ? job.params.seed : Date.now();
+  a.download = `qwen21_${job.mode}_${seed}${idx ? "_" + idx : ""}.png`;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+function openModal(url, job) {
+  $("#m-img").src = url;
+  $("#m-dl").onclick = () => download(url, job);
+  const p = job.params || {};
+  $("#m-meta").value = JSON.stringify({
+    模式: job.mode_label, 提示词: job.prompt, 负向: job.negative,
+    尺寸: p.size, 张数: (job.images || []).length, 步数: p.steps, cfg: p.cfg,
+    采样器: p.sampler, 调度器: p.scheduler, 种子: p.seed, 耗时秒: job.elapsed,
+  }, null, 2);
+  $("#modal").classList.add("show");
+}
+
+/* ---------------- 中断 / 释放 ---------------- */
+async function interrupt() {
+  try {
+    await fetch("/api/interrupt", { method: "POST" });
+    // 不在这里停轮询：让轮询去拿 ComfyUI 的终态（interrupted / error）
+    $("#prog-t").textContent = "正在中断…";
+    $("#btn-stop").disabled = true;
+  } catch (e) { toast("中断失败", "err"); }
+}
+async function freeMem() {
+  try {
+    const j = await (await fetch("/api/free", { method: "POST" })).json();
+    toast(j.ok ? "显存已释放，模型下次出图会重新加载" : "释放失败", j.ok ? "ok" : "err");
+  } catch (e) { toast("释放失败", "err"); }
+}
+
+/* ---------------- 历史 ---------------- */
+async function loadHist() {
+  try {
+    const j = await (await fetch("/api/jobs")).json();
+    S.hist = j.jobs || [];
+    const g = $("#hist");
+    g.innerHTML = "";
+    const withImg = S.hist.filter(x => (x.images || []).length);
+    $("#hist-sub").textContent =
+      S.hist.reduce((n, x) => n + (x.images || []).length, 0) + " 张";
+    if (!withImg.length) {
+      g.innerHTML = '<div class="empty" style="grid-column:1/-1">暂无记录</div>';
+      return;
+    }
+    for (const job of withImg) {
+      const im = job.images[0];
+      const url = imgURL(im);
+      const it = el("div", "it");
+      const box = el("div", "im");
+      const img = el("img"); img.loading = "lazy"; img.src = url; box.appendChild(img);
+      it.appendChild(box);
+      it.appendChild(el("div", "md", job.mode_label || job.mode));
+      if (job.elapsed) it.appendChild(el("div", "tm", job.elapsed + "s"));
+      const mt = el("div", "mt");
+      mt.appendChild(el("span", null, fmtTime(job.created)));
+      mt.appendChild(el("span", null, (job.params && job.params.seed) ? ("#" + job.params.seed) : ""));
+      it.appendChild(mt);
+      if (job.images.length > 1) it.appendChild(el("span", "nb", "×" + job.images.length));
+      it.onclick = () => { showResult(job); window.scrollTo({ top: 0, behavior: "smooth" }); };
+      g.appendChild(it);
+    }
+  } catch (e) { /* ignore */ }
+}
+async function clearHist() {
+  if (!confirm("清空历史记录？图片文件不会被删除，只清列表。")) return;
+  await fetch("/api/clear-jobs", { method: "POST" });
+  loadHist();
+  toast("历史已清空", "ok");
+}
+
+boot();
+</script>
+</body>
+</html>

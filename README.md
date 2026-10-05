@@ -1,0 +1,171 @@
+# Qwen-Image-2.1 本地出图台（WebUI）
+
+一套跑在 **ComfyUI + Qwen-Image-2.1（8GB 显存 Windows 本机）** 上的**轻量中文 Web 前端**与配套脚本。
+双击 `.bat` 即可出图，内置文生图 / 参考图编辑 / 背景移除 / 姿势编辑四个标签页，自带历史画廊与提示词润色。
+
+> ⚠️ **这不是 ComfyUI 的分支，也不是模型仓库。**
+> 本项目只是一个**独立进程的前端**，通过 ComfyUI 的 HTTP API（`/prompt`、`/upload/image`、`/free` 等）与之通信，
+> 自身不含 ComfyUI 源码、不含任何模型权重。请把它当作「覆盖到你的 ComfyUI 根目录的一叠文件」来用。
+
+---
+
+## ⚠️ 许可证与合规（发布前必读）
+
+本项目能跑起来，依赖三件各自带许可证的东西，**任何一件出商业用途问题都不归本项目管**：
+
+| 组件 | 许可证 | 说明 |
+|---|---|---|
+| 本前端（本仓库 `_server.py` 等） | **MIT** | 随便用、改、分发 |
+| [ComfyUI](https://github.com/comfyanonymous/ComfyUI) | **GPL-3.0** | 你需自行安装，本仓库不包含其代码 |
+| [ComfyUI-GGUF](https://github.com/city96/ComfyUI-GGUF) | **Apache-2.0** | 自定义节点，自行安装 |
+| [ComfyUI-Fisher-Pose](https://github.com/...) | **MIT** | 姿势编辑档所需自定义节点 |
+| **Qwen-Image-2.1 底座（GGUF 量化 / 文本编码器 / VAE）** | **Qwen Research License（非商用）** | 🔴 **仅限研究 / 非商用**。商业用途需向通义千问申请授权 |
+| VNCCS QI2 PoseStudio LoRA | 未知（随插件发布） | 姿势编辑档必需，运行期加载 |
+
+**结论**：本仓库代码可自由 MIT 分发；但**它驱动出的整套环境（尤其 Qwen 底座）是「非商用」的**。
+如果你打算商用，请先把模型换成有商用授权的底座。
+
+> 另外，`ComfyUI-Viggle-Turbo` 加速档插件**没有 LICENSE 文件**（默认保留所有权利），
+> 其 LoRA 权重**不得随本项目分发**——本仓库不包含它，需要请自行从原发布方获取。
+
+---
+
+## 功能
+
+| 标签 | 做什么 | 输入 | 1024×1024 实测墙钟耗时（8GB 卡） | 加速档 |
+|---|---|---|---|---|
+| **文生图** | 纯文字生成图片 | 提示词 + 宽高 | ~63 s | ~30 s |
+| **参考图编辑** | 上传一张图，按指令改背景 / 服装 / 姿势，**保住人脸** | 参考图 + 编辑指令 | ~186 s | ~58 s |
+| **背景移除** | 上传一张图，抠掉背景 | 参考图（提示词常为空） | ~87 s | ~56 s |
+| **姿势编辑** | 摆一个 3D 人偶的姿势，让参考图里的人**照做** | 参考图 + 人偶姿势 | ~150 s | ❌ 不支持 |
+
+- 中文深色界面，四个标签页一键出图，参数自动跳到该档实测最优配方。
+- **历史画廊**：自动留存每次出图，可对比、可下载。
+- **提示词润色**：用本机 Ollama 把一句话扩写成英文提示词（零显存占用，不可用时静默回落离线规则）。
+- **一键释放显存**：`清理显存.bat` 让 ComfyUI 卸载缓存模型、停掉 Ollama 驻留。
+- **局域网访问**：同一 WiFi 下手机 / 平板可直接打开出图台（⚠️ 该模式无密码，详见末节）。
+
+---
+
+## 环境要求
+
+| 项 | 最低要求 | 实测环境 |
+|---|---|---|
+| 系统 | Windows 10/11（64 位） | Windows 11 |
+| GPU | NVIDIA，≥ 8 GB 显存（Compute Capability 8.x 优先） | RTX 2000 Ada Laptop 8 GB |
+| Python | 3.13（建议用 ComfyUI 自带的 venv） | 3.13.x |
+| 后端 | 已部署 [ComfyUI](https://github.com/comfyanonymous/ComfyUI) 0.37.x | 0.37.0 |
+| 自定义节点 | `ComfyUI-GGUF`、`ComfyUI-Fisher-Pose`（姿势档需要） | — |
+| 可选 | [Ollama](https://ollama.com)（提示词润色，无则自动绕过） | — |
+
+> 本项目**纯标准库实现**（只用到 `http.server` / `urllib` / `subprocess` 等），不额外装包。
+
+---
+
+## 模型文件
+
+请自行下载下列权重，按 ComfyUI 常规子目录放置（文件名需与此完全一致）：
+
+| 文件名 | 放哪 | 约大小 | 用途 |
+|---|---|---|---|
+| `qwen-image-2.1-Q4_K_M.gguf` | `models/diffusion_models/` | 4.0 GiB | DiT 底座（GGUF 量化） |
+| `qwen3vl_8b_w4a8.safetensors` | `models/text_encoders/` | 5.9 GiB | 文本编码器（Qwen3-VL） |
+| `qwen_image_2.1_vae_bf16.safetensors` | `models/vae/` | 0.6 GiB | VAE 解码 |
+| `VNCCS_QI2_PoseStudioV1.1.safetensors` | `models/loras/` | 0.15 GiB | 姿势编辑 LoRA（强度固定 1.0） |
+| `Qwen-Image-2.1-viggle-turbo-*-lora-*.safetensors` | `models/loras/` | 0.3 / 0.6 GiB | 加速档（可选，非必须） |
+
+> 提示词润色默认走本地 Ollama（`ollama create qwen-image-pe-t2i -f models\prompt_enhancer\Modelfile` 后可用官方 PE 模型）；
+> Ollama 不在时自动回落离线规则，不影响出图。
+
+---
+
+## 安装与启动
+
+1. 把本仓库的文件**原样覆盖到你的 ComfyUI 安装根目录**（与 `main.py` 同级）。
+   关键在于 `_server.py` / `qwen.py` 等脚本都用「自身文件所在目录」定位 ComfyUI，因此**必须放在根目录**，
+   不能塞进子文件夹。根目录结构见下。
+
+2. 按上表放好模型与自定义节点，确认 `启动ComfyUI.bat` 能正常拉起后端（默认 `http://127.0.0.1:8188`）。
+
+3. 双击 **`启动出图台.bat`** —— 它会自动：清理显存 → 体检 ComfyUI 后端（僵死进程自动清掉）→
+   启动前端服务（默认 `http://127.0.0.1:8190`）→ 打开浏览器。
+
+4. 出图台里选标签、填提示词、点出图。停止时双击 **`停止出图台.bat`**。
+
+> 命令行党可直接用 `qwen.py`：`python qwen.py t2i "一只戴帽子的猫"`、`python qwen.py edit -r 图.png "换成雨夜东京"`、
+> `python qwen.py bgremove -r 图.png`、`python qwen.py list`（看历史）。
+> 姿势编辑档需要浏览器里摆 3D 人偶，CLI 做不了，请用出图台。
+
+### 局域网 / 防火墙
+
+- `启动出图台.bat` 默认监听 `0.0.0.0`，同 WiFi 的手机可直接访问（地址会打印在控制台，也会显示在网页右上角胶囊里）。
+- 手机打不开 → 右键 **`放行出图台端口.bat`** → 以管理员身份运行一次（放行 8190 端口）。
+- 只想本机用：双击 `启动出图台-仅本机.bat`（`WEB_HOST=127.0.0.1`，网页不再显示局域网地址）。
+
+---
+
+## 目录结构
+
+```
+ComfyUI\                      ← 你的 ComfyUI 根目录（本仓库覆盖到这里）
+├── _server.py                出图台后端（纯标准库 HTTP 服务，端口 8190）
+├── _web\index.html           前端单文件页面
+├── qwen.py                   CLI 出图门面（t2i / edit / bgremove / list / styles）
+├── _prompt_eng.py            提示词风格库 + Ollama 润色 / 离线回落
+├── _api_t2i.json            文生图 API 工作流模板（喂给 ComfyUI /prompt）
+├── _api_edit2.json          参考图编辑模板
+├── _api_bgremove_cfg1.json  背景移除模板
+├── _api_pose.json           姿势编辑模板
+├── _free_vram.py            释放显存（ComfyUI /free + Ollama）
+├── _release_resources.py    释放系统资源（一键关机前的清理）
+├── _zombie_check.py         端口体检：端口在监听 ≠ 服务活着
+├── _apply_zombie_guard.py   给启动脚本加僵尸检测守卫
+├── 启动出图台.bat / 停止出图台.bat / 启动ComfyUI.bat
+├── 启动出图台-仅本机.bat / 启动出图台-局域网.bat
+├── 清理显存.bat / 释放资源.bat / 放行出图台端口.bat
+├── workflows\               ComfyUI 原生界面用的四个工作流（可选，放进 user/default/workflows/）
+│   ├── qwen_image_2_1_local_t2i.json
+│   ├── qwen_image_2_1_local_edit.json
+│   ├── qwen_image_2_1_local_bgremove.json
+│   └── qwen_image_2_1_local_pose.json
+├── docs\                    使用说明 / 加速档 / 风格模板（从开发环境导出的文档）
+│   ├── 使用说明.md
+│   ├── LoRA加速档.md
+│   └── 风格模板.md
+└── （开发工具：_make_installer.py / _check_*.py / _validate_ui_workflow.py，仅维护用，不影响运行）
+```
+
+> `docs/` 里引用到的 `_styletest\`、`_wx\` 等是开发期脚手架，**未包含在本仓库**。
+
+---
+
+## 8GB 显存避坑
+
+- ComfyUI 出图后**不会主动释放**缓存模型（DiT + LoRA + VAE ≈ 3.9 GiB）。再想出图却报显存不足时，
+  先怀疑它：看 `/system_stats` 的 `torch_vram_total` 是否 > 0。调用 `POST /free {"unload_models":true,"free_memory":true}`
+  即可释放（该接口返回空 body，只看 HTTP 状态码）。
+- ComfyUI 与 Ollama-GPU **不能同时全力跑**；出图前先停掉 Ollama 驻留（`清理显存.bat` 会一起处理）。
+- 同一参数重复提交会命中 ComfyUI 执行缓存（0.3 秒「完成」返回上次的图），**对比测试务必换种子**。
+
+---
+
+## 隐私与安全
+
+- **局域网模式下出图台没有任何认证**，同一个 WiFi 里的任何人都能用你的显卡出图。
+  **不要在公共 WiFi / 开放网络下用 `0.0.0.0` 监听**；公共场合请改用 `启动出图台-仅本机.bat`。
+- 所有计算都在本机完成，提示词和图片**不会上传到任何云端**（Ollama 润色若有，也是本机推理）。
+
+---
+
+## 许可证
+
+- 本仓库代码：**MIT**（见 `LICENSE`）。
+- 依赖项许可证见上文表格，商业用途请先确认 Qwen 底座的授权范围。
+
+---
+
+## 致谢
+
+- [ComfyUI](https://github.com/comfyanonymous/ComfyUI) 与社区自定义节点提供了推理后端。
+- Qwen 团队开源的 Qwen-Image-2.1 系列模型。
+- Fisher Pose / VNCCS 提供的姿势编辑 LoRA 与节点。
