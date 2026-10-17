@@ -1,11 +1,15 @@
 name: Sync release notes
 
-# 把 .github/release-notes/<tag>.md 的内容同步到同名 GitHub Release 的正文。
-# 改一次文件就更新一次正文，不需要本地 token。
+# 把 .github/release-notes/<tag>.md 同步到同名 GitHub Release。
+# 规则：
+#   - 首行若为「# 标题」（单个 #），该行作为 release 标题，其余内容作为正文；
+#   - 首行不是单 # 时，只更新正文，标题保持不变。
+# 改一次文件就更新一次，不需要本地 token。
 on:
   push:
     paths:
       - '.github/release-notes/*.md'
+      - '.github/workflows/release-notes.yml'
   workflow_dispatch:
 
 permissions:
@@ -25,10 +29,28 @@ jobs:
           shopt -s nullglob
           for f in .github/release-notes/*.md; do
             tag="$(basename "$f" .md)"
-            if gh release view "$tag" >/dev/null 2>&1; then
-              gh release edit "$tag" --notes-file "$f"
-              echo "updated release $tag from $f"
-            else
+
+            if ! gh release view "$tag" >/dev/null 2>&1; then
               echo "skip $tag (no such release)"
+              continue
             fi
+
+            title=""
+            body="$RUNNER_TEMP/body.md"
+            first="$(head -n 1 "$f")"
+            if [[ "$first" =~ ^#[[:space:]]+ ]]; then
+              title="$(printf '%s' "$first" | sed -E 's/^#[[:space:]]+//')"
+              # 去掉标题行和紧随其后的空行
+              tail -n +2 "$f" | sed -E '1{/^[[:space:]]*$/d}' > "$body"
+            else
+              cp "$f" "$body"
+            fi
+
+            args=(--notes-file "$body")
+            if [[ -n "$title" ]]; then
+              args+=(--title "$title")
+            fi
+
+            gh release edit "$tag" "${args[@]}"
+            echo "updated release $tag (title=${title:-<unchanged>})"
           done
