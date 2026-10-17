@@ -39,7 +39,7 @@ jobs:
             body="$RUNNER_TEMP/body.md"
             first="$(head -n 1 "$f")"
             if [[ "$first" =~ ^#[[:space:]]+ ]]; then
-              title="$(printf '%s' "$first" | sed -E 's/^#[[:space:]]+//')"
+              title="$(printf '%s' "$first" | sed -E 's/^#[[:space:]]+//' | tr -d '\r')"
               # 去掉标题行和紧随其后的空行
               tail -n +2 "$f" | sed -E '1{/^[[:space:]]*$/d}' > "$body"
             else
