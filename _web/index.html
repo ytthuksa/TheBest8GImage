@@ -131,6 +131,16 @@ button.wide{width:100%;margin-top:16px}
 .lex-pres{font-size:11.5px;padding:3px 10px;border-radius:20px;border:1px dashed var(--acc);
           background:var(--panel);color:var(--tx);cursor:pointer;user-select:none;white-space:nowrap}
 .lex-pres:hover{background:var(--bg2);border-style:solid}
+/* ---- 7 要素结构面板（Phase 3）---- */
+#struct-panel{display:none;margin-top:11px;padding:11px 12px;border:1px solid var(--line);
+              border-radius:10px;background:var(--panel2)}
+#struct-panel.on{display:block}
+.st-row{margin-bottom:8px}
+.st-row > label{display:block;font-size:11px;color:var(--tx3);margin-bottom:3px}
+.st-row > label > b{color:var(--tx2);font-weight:500}
+.st-row input{width:100%;box-sizing:border-box}
+.st-acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px}
+.st-res{font-size:11px;color:var(--tx3);line-height:1.6}
 .lex-sep{height:1px;background:var(--line);margin:9px 0}
 
 /* ---- 多方向版本卡片 ---- */
@@ -224,7 +234,7 @@ button.wide{width:100%;margin-top:16px}
 /* ---------- toast ---------- */
 #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);z-index:300;
   background:#1b2231;border:1px solid var(--line2);border-left:3px solid var(--acc);border-radius:10px;
-  padding:11px 18px;font-size:13px;box-shadow:0 16px 40px -14px #000;opacity:0;transition:.28s;max-width:min(560px,90vw)}
+  padding:11px 18px;font-size:13px;line-height:1.5;box-shadow:0 16px 40px -14px #000;opacity:0;transition:.28s;max-width:min(760px,90vw);overflow-wrap:anywhere;text-align:left}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 #toast.err{border-left-color:var(--err)}
 #toast.ok{border-left-color:var(--ok)}
@@ -258,6 +268,7 @@ button.wide{width:100%;margin-top:16px}
         <div class="tab" data-mode="edit"><span data-i18n="tab.edit">参考图编辑</span><em data-base="~186 秒" data-turbo="⚡ ~58 秒">~186 秒</em></div>
         <div class="tab" data-mode="bgremove"><span data-i18n="tab.bgremove">背景移除</span><em data-base="~87 秒" data-turbo="⚡ ~56 秒">~87 秒</em></div>
         <div class="tab" data-mode="pose"><span data-i18n="tab.pose">姿势编辑</span><em data-base="~200 秒" data-turbo="~200 秒">~200 秒</em></div>
+        <div class="tab" data-mode="inpaint"><span data-i18n="tab.inpaint">局部重绘</span><em data-base="~34 秒" data-turbo="~34 秒">~34 秒</em></div>
       </div>
       <div class="card-b">
 
@@ -289,12 +300,26 @@ button.wide{width:100%;margin-top:16px}
             <option value="en" data-i18n="pt.langEn">英文</option>
             <option value="zh" data-i18n="pt.langZh">中文</option>
           </select>
+          <button id="btn-struct" class="ghost" data-i18n="pt.struct" data-i18n-title="pt.structTitle">🧩 结构</button>
           <button id="btn-lex" class="ghost" data-i18n="pt.lexicon" data-i18n-title="pt.lexiconTitle" title="维度词库：点一下把该维度词拼进提示词">🏷 维度</button>
           <button id="btn-clr" class="ghost" data-i18n="pt.clear" data-i18n-title="pt.clearTitle" title="清空提示词">清空</button>
         </div>
         <div id="lex-panel"></div>
         <div id="enh-variants"></div>
         <div id="enh-note" style="font-size:11.5px;color:var(--tx3);margin-top:7px;display:none"></div>
+
+        <!-- 7 要素提示词结构（Phase 3）：逐格填，按固定顺序拼成一段 -->
+        <div id="struct-panel"></div>
+
+        <!-- 大胆度档位（L0–L3）：只补机位+姿势，不动画风、不动采样参数 -->
+        <div id="bold-box" style="margin-top:14px">
+          <div style="font-size:11.5px;color:var(--tx3);margin-bottom:4px">
+            <span data-i18n="bold.label">大胆度</span>
+            <span style="color:#6b7688" data-i18n="bold.hint">（只补机位和姿势，不动画风）</span>
+          </div>
+          <select id="boldness"></select>
+          <div id="bold-note" style="font-size:11px;color:var(--tx3);line-height:1.6;margin-top:6px"></div>
+        </div>
 
         <!-- 负向 -->
         <label class="f"><span data-i18n="neg.label">负向提示词</span> <span class="hint" data-i18n="neg.hint">（不想出现的东西，可留空）</span></label>
@@ -326,6 +351,9 @@ button.wide{width:100%;margin-top:16px}
           </div>
         </div>
 
+        <!-- NSFW 竖版配方一键按钮：参数从 /api/config 的 nsfw_preset 读，不硬编码 -->
+        <button id="btn-nsfw" class="ghost wide" style="margin-bottom:10px" data-i18n="p.nsfwPreset">NSFW 竖版配方</button>
+
         <div id="res-box" style="display:none;margin-bottom:10px">
           <div style="font-size:11.5px;color:var(--tx3);margin-bottom:4px"><span data-i18n="p.res">长边分辨率</span> <span style="color:#6b7688" data-i18n="p.resHint">（输出尺寸跟随参考图）</span></div>
           <select id="resolution"></select>
@@ -342,12 +370,51 @@ button.wide{width:100%;margin-top:16px}
           <img id="pose-thumb" alt="人偶姿态图" style="display:none;width:100%;margin-top:8px;border-radius:8px;border:1px solid var(--line)">
         </div>
 
+        <!-- 局部重绘（刷蒙版 + 重绘） -->
+        <div id="inpaint-box" style="display:none;margin:12px 0 0">
+          <div style="font-size:11.5px;color:var(--tx3);margin-bottom:6px">
+            <span data-i18n="inpaint.maskLabel">蒙版</span> <span style="color:#6b7688" data-i18n="inpaint.maskHint">（在原图上用画笔涂抹要重绘的区域，多刷一点留余量）</span>
+          </div>
+          <div id="mask-stage" class="mask-stage">
+            <canvas id="mask-base"></canvas>
+            <canvas id="mask-draw"></canvas>
+            <div id="mask-empty" class="mask-empty" data-i18n="inpaint.uploadFirst">先上传原图，再在这里刷蒙版</div>
+          </div>
+          <div class="btns" style="margin-top:8px">
+            <span style="font-size:11.5px;color:var(--tx3)">画笔 <b id="brush-v">36</b>px</span>
+            <input type="range" id="brush" min="4" max="160" value="36" style="flex:1;min-width:90px">
+            <button id="btn-brush" class="mini on" data-i18n-title="inpaint.brush" title="画笔模式">🖌 画笔</button>
+            <button id="btn-erase" class="mini ghost" data-i18n-title="inpaint.erase" title="擦除蒙版">🧽 擦除</button>
+            <button id="btn-clear-mask" class="mini ghost" data-i18n="inpaint.clearMask">清空</button>
+          </div>
+          <div class="row" style="margin-top:10px;gap:18px">
+            <label class="chk"><input type="radio" name="imode" value="crop" checked> <span data-i18n="inpaint.crop">裁剪切块（快，推荐）</span></label>
+            <label class="chk"><input type="radio" name="imode" value="full"> <span data-i18n="inpaint.full">全幅重绘（慢，适合大面积）</span></label>
+          </div>
+          <div id="inpaint-res" style="display:none;margin-top:8px">
+            <div style="font-size:11.5px;color:var(--tx3);margin-bottom:4px" data-i18n="inpaint.res">处理分辨率（全幅模式）</div>
+            <select id="inpaint-resolution"></select>
+          </div>
+          <div style="font-size:11px;color:var(--tx3);line-height:1.6;margin-top:8px">
+            蒙版外的内容会**原样保留**，只重绘你涂的区域。裁剪切块约 34 秒；若涂的面积很大，会自动切到全幅（更慢但更稳）。
+          </div>
+        </div>
+
+        <style>
+        .mask-stage{position:relative;display:none;max-width:100%;line-height:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#0c0e14}
+        .mask-stage canvas{max-width:100%;height:auto;display:block}
+        #mask-draw{position:absolute;inset:0;cursor:crosshair;touch-action:none}
+        .mask-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--tx3);font-size:13px;text-align:center;padding:24px;line-height:1.6}
+        .btns .mini.on{background:#3a7afe;color:#fff;border-color:#3a7afe}
+        </style>
+
         <div id="lora-box" style="margin:12px 0 0">
           <div style="font-size:11.5px;color:var(--tx3);margin-bottom:4px">LoRA <span style="color:#6b7688" data-i18n="p.loraHint">（可留空）</span></div>
           <select id="lora" title="挂在底座模型上的额外权重"></select>
           <div id="lora-w-wrap" style="display:none;margin-top:8px">
             <div style="font-size:11.5px;color:var(--tx3);margin-bottom:4px" data-i18n="p.loraWeight">LoRA 权重</div>
             <div class="slider"><input type="range" id="lora-w" min="0" max="2" step="0.05" value="1"><span class="val" id="lora-w-v">1.00</span></div>
+            <div id="lora-w-hint" style="display:none;font-size:11px;color:#e0a04a;line-height:1.55;margin-top:6px"></div>
           </div>
           <label class="chk" id="lora-turbo-wrap" style="display:none">
             <input type="checkbox" id="lora-turbo" checked> <span data-i18n="p.turbo">加速档</span>
@@ -359,10 +426,27 @@ button.wide{width:100%;margin-top:16px}
             <select id="turbo-steps" data-i18n-title="p.turboPresetTitle" title="官方给的 raw sigma 节点表；步数和表是一体的，不能随便填数"></select>
           </div>
           <div id="lora-note" style="font-size:11px;color:var(--tx3);line-height:1.6;margin-top:7px"></div>
+
+          <div id="lora2-wrap" style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--bd)">
+            <div style="font-size:11.5px;color:var(--tx3);margin-bottom:4px"><span data-i18n="p.lora2">附加 LoRA</span>
+              <span style="color:#6b7688" data-i18n="p.lora2Hint">（叠加在主 LoRA 上，可留空）</span></div>
+            <select id="lora2" data-i18n-title="p.lora2Title" title="与主 LoRA 串联叠加（合并进权重）。加速档 LoRA 不能放这里。"></select>
+            <div id="lora2-w-wrap" style="display:none;margin-top:8px">
+              <div style="font-size:11.5px;color:var(--tx3);margin-bottom:4px" data-i18n="p.loraWeight">LoRA 权重</div>
+              <div class="slider"><input type="range" id="lora2-w" min="0" max="2" step="0.05" value="1"><span class="val" id="lora2-w-v">1.00</span></div>
+            </div>
+            <div id="lora2-note" style="display:none;font-size:11px;color:#7fd4a0;line-height:1.6;margin-top:7px;white-space:pre-line"></div>
+          </div>
+
+          <div id="vae-wrap" style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--bd)">
+            <div style="font-size:11.5px;color:var(--tx3);margin-bottom:4px"><span data-i18n="p.vae">VAE</span>
+              <span style="color:#6b7688" data-i18n="p.vaeHint">（解码器）</span></div>
+            <select id="vae" data-i18n-title="p.vaeTitle" title="VAE 负责把 latent 解码成像素。texture-fix 版对细纹理/透明区更友好。"></select>
+          </div>
         </div>
 
         <div style="font-size:11.5px;color:var(--tx3);margin:2px 0 4px" data-i18n="p.steps">采样步数</div>
-        <div class="slider"><input type="range" id="steps" min="4" max="40" step="1" value="15"><span class="val" id="steps-v">15</span></div>
+        <div class="slider"><input type="range" id="steps" min="4" max="60" step="1" value="15"><span class="val" id="steps-v">15</span></div>
 
         <div style="font-size:11.5px;color:var(--tx3);margin:12px 0 4px" data-i18n="p.cfg">CFG 引导强度</div>
         <div class="slider"><input type="range" id="cfg" min="0" max="6" step="0.1" value="1.0"><span class="val" id="cfg-v">1.0</span></div>
@@ -376,6 +460,7 @@ button.wide{width:100%;margin-top:16px}
               <option value="euler_ancestral">euler_ancestral</option>
               <option value="dpmpp_2m">dpmpp_2m</option>
               <option value="uni_pc">uni_pc</option>
+              <option value="er_sde" data-i18n="cb.samplerErsde">er_sde（NSFW 配方）</option>
             </select>
           </div>
           <div>
@@ -504,6 +589,8 @@ const S = {
   cfg: null,          // /api/config
   ref: null,          // {name, subfolder, type, ref, url}
   pose: null,         // 姿势档的 pose_json 字符串（含人偶图 base64）
+  erase: false,       // 局部重绘：当前是擦除模式还是画笔模式
+  maskReady: false,   // 局部重绘：蒙版是否已画过
   job: null,
   timer: null,
   t0: 0,
@@ -516,7 +603,8 @@ function toast(msg, kind) {
   t.textContent = msg;
   t.className = "show " + (kind || "");
   clearTimeout(t._h);
-  t._h = setTimeout(() => t.className = "", kind === "err" ? 5200 : 2800);
+  const hold = kind === "err" ? Math.min(16000, Math.max(5200, 5200 + msg.length * 28)) : 2800;
+  t._h = setTimeout(() => t.className = "", hold);
 }
 
 function fmtTime(ts) {
@@ -698,6 +786,8 @@ function refreshDynamicText() {
 
   /* 下拉框里由后端 label 拼出来的选项 —— 重建并保住当前选择 */
   renderStyles();
+  renderBoldness();
+  refreshStructText();
   renderLoras();
   syncLoraUI();
   syncStyleUI();
@@ -738,6 +828,16 @@ function refreshDynamicText() {
         p.turbo ? "ok" : null);
       if (p.turbo && sc.label) add(t("res.preset"), serverLabel("sched", p.turbo_steps, sc.label));
     }
+    if (p.lora2) {
+      const LM2 = (S.cfg.loras || []).find(x => x.file === p.lora2);
+      add(t("res.lora2"),
+        "+ " + (LM2 ? serverLabel("lora", p.lora2, LM2.label) : p.lora2.replace(/\.safetensors$/, "")) +
+        (Number(p.lora2_weight) !== 1 ? " @" + p.lora2_weight : ""), "ok");
+    }
+    if (p.vae) {
+      const VM = (S.cfg.vaes || []).find(x => x.file === p.vae);
+      add(t("res.vae"), VM ? VM.label : p.vae, "ok");
+    }
     if (p.size) add(t("res.size"), p.size);
     if (job.images.length > 1) add(t("res.count"), job.images.length, "ok");
     add(t("res.steps"), p.steps);
@@ -769,14 +869,22 @@ async function boot() {
     toast(t("err.config"), "err");
     return;
   }
-  // 分辨率下拉
+  // 分辨率下拉。两套列表语义不同，别混：
+  //   宽 / 高（t2i / pose 档）← res_presets（方形）
+  //   长边（edit / bgremove / inpaint 全幅）← res_presets_longside
+  // 长边兜底：老后端不返回 res_presets_longside 时回落 res_presets，别让下拉变空。
   const presets = S.cfg.res_presets || [768, 1024, 1280];
+  const presetsLong = S.cfg.res_presets_longside || presets;
   for (const r of presets) {
-    $("#width").appendChild(new Option(r + " × " + r, r));
-    $("#height").appendChild(new Option(r + " × " + r, r));
-    $("#resolution").appendChild(new Option(r + "（长边）", r));
+    $("#width").appendChild(new Option(r, r));
+    $("#height").appendChild(new Option(r, r));
   }
-  $("#width").value = 1024; $("#height").value = 1024; $("#resolution").value = 1024;
+  for (const r of presetsLong) {
+    $("#resolution").appendChild(new Option(r + "（长边）", r));
+    $("#inpaint-resolution").appendChild(new Option(r + "（长边）", r));
+  }
+  $("#width").value = 1024; $("#height").value = 1024;
+  $("#resolution").value = 1024; $("#inpaint-resolution").value = 1024;
 
   document.querySelectorAll(".tab").forEach(t =>
     t.addEventListener("click", () => setMode(t.dataset.mode)));
@@ -787,15 +895,23 @@ async function boot() {
     const upd = () => v.textContent = dec ? Number(r.value).toFixed(dec) : r.value;
     r.addEventListener("input", upd); upd();
   };
-  bind("steps", 0); bind("cfg", 1); bind("lora-w", 2);
+  bind("steps", 0); bind("cfg", 1); bind("lora-w", 2); bind("lora2-w", 2);
   renderLoras();
   renderStyles();
+  renderBoldness();
+  renderLora2("");
+  renderVaes();
   renderLan();
   $("#lora").onchange = syncLoraUI;
+  $("#lora2").onchange = syncLora2UI;
+  $("#vae").onchange = () => { S.vae = $("#vae").value; };
   $("#lora-turbo").onchange = syncLoraUI;
   $("#turbo-steps").onchange = syncLoraUI;
   $("#style").onchange = syncStyleUI;
-  $("#style-nsfw").onchange = renderStyles;
+  $("#style-nsfw").onchange = () => { renderStyles(); renderBoldness(); };
+  $("#boldness").onchange = syncBoldUI;
+  // 提示词变长/变短会影响「档位叠加会不会打架」的提醒，输入时同步一次
+  $("#prompt").addEventListener("input", syncBoldUI);
 
   $("#btn-rand").onclick = () => { $("#seed").value = Math.floor(Math.random() * 2 ** 31); };
   $("#btn-go").onclick = generate;
@@ -805,8 +921,53 @@ async function boot() {
   $("#btn-refresh").onclick = loadHist;
   $("#btn-clrh").onclick = clearHist;
   $("#btn-enh").onclick = enhance;
+  $("#btn-nsfw").onclick = applyNsfwPreset;
+  $("#btn-struct").onclick = renderStruct;
   $("#btn-lex").onclick = renderLex;
   $("#btn-clr").onclick = () => { $("#prompt").value = ""; hideVariants(); };
+
+  // 局部重绘：笔刷 / 蒙版工具
+  $("#brush").addEventListener("input", () => { $("#brush-v").textContent = $("#brush").value; });
+  $("#btn-brush").onclick = () => {
+    S.erase = false; $("#btn-brush").classList.add("on"); $("#btn-erase").classList.remove("on");
+  };
+  $("#btn-erase").onclick = () => {
+    S.erase = true; $("#btn-erase").classList.add("on"); $("#btn-brush").classList.remove("on");
+  };
+  $("#btn-clear-mask").onclick = () => {
+    const d = $("#mask-draw");
+    d.getContext("2d").clearRect(0, 0, d.width, d.height);
+    S.maskReady = false;
+  };
+  document.querySelectorAll('input[name=imode]').forEach(r =>
+    r.addEventListener("change", () => {
+      $("#inpaint-res").style.display = (r.value === "full" && r.checked) ? "block" : "none";
+    }));
+
+  // 蒙版画布画笔（指针事件，桌面 + 触屏通用）
+  const draw = $("#mask-draw");
+  let _drawing = false;
+  const paintAt = (e) => {
+    const rect = draw.getBoundingClientRect();
+    if (!rect.width) return;
+    const ctx = draw.getContext("2d");
+    const sx = draw.width / rect.width, sy = draw.height / rect.height;
+    const x = (e.clientX - rect.left) * sx, y = (e.clientY - rect.top) * sy;
+    const r = Number($("#brush").value) * sx;
+    ctx.globalCompositeOperation = S.erase ? "destination-out" : "source-over";
+    ctx.fillStyle = "rgba(255,255,255,1)";
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    S.maskReady = true;
+  };
+  draw.addEventListener("pointerdown", e => {
+    _drawing = true;
+    try { draw.setPointerCapture(e.pointerId); } catch (_) {}
+    paintAt(e);
+  });
+  draw.addEventListener("pointermove", e => { if (_drawing) paintAt(e); });
+  draw.addEventListener("pointerup", () => { _drawing = false; });
+  draw.addEventListener("pointerleave", () => { _drawing = false; });
+  draw.addEventListener("pointercancel", () => { _drawing = false; });
 
   // 上传
   $("#drop").onclick = () => $("#file").click();
@@ -853,11 +1014,20 @@ function setMode(m) {
   $("#wh-box").style.display = (m === "t2i" || isPose) ? "grid" : "none";
   $("#res-box").style.display = (m === "edit" || m === "bgremove") ? "block" : "none";
   $("#pose-box").style.display = isPose ? "block" : "none";
+  $("#inpaint-box").style.display = (m === "inpaint") ? "block" : "none";
   // 姿势档的 LoRA 写死在模板里（VNCCS PoseStudio），不给换 —— 换别的画面必崩
-  $("#lora-box").style.display = isPose ? "none" : "block";
-  $("#lbl-ref").innerHTML = isPose
-    ? t("ref.poseLabel") + ' <span class="hint">' + t("ref.poseHint") + '</span>'
-    : t("ref.label") + ' <span class="hint">' + t("ref.hint") + '</span>';
+  // 局部重绘也不走通用 LoRA（重绘质量靠蒙版 + cfg，挂 LoRA 会带偏重绘区）
+  $("#lora-box").style.display = (isPose || m === "inpaint") ? "none" : "block";
+  // NSFW 竖版配方按钮是 t2i 专用（主槽挂 LoRA + t2i 采样参数）；
+  // 其他档若可见，一点就会把该档官方配方（如 pose 的 euler/25/1.0）改乱，故只在本档显示。
+  $("#btn-nsfw").style.display = (m === "t2i") ? "" : "none";
+  if (isPose) {
+    $("#lbl-ref").innerHTML = t("ref.poseLabel") + ' <span class="hint">' + t("ref.poseHint") + '</span>';
+  } else if (m === "inpaint") {
+    $("#lbl-ref").innerHTML = t("inpaint.srcLabel") + ' <span class="hint">' + t("inpaint.srcHint") + '</span>';
+  } else {
+    $("#lbl-ref").innerHTML = t("ref.label") + ' <span class="hint">' + t("ref.hint") + '</span>';
+  }
 
   $("#steps").value = r.steps; $("#steps-v").textContent = r.steps;
   $("#cfg").value = r.cfg; $("#cfg-v").textContent = Number(r.cfg).toFixed(1);
@@ -872,7 +1042,15 @@ function setMode(m) {
   if (m === "edit" && $("#prompt").value.trim() === S.cfg.bgremove_prompt) $("#prompt").value = "";
   syncLoraUI();
   syncStyleUI();
+  syncBoldUI();
   if (isPose) syncPoseUI();
+  if (m === "inpaint") {
+    renderMaskStage();
+    const full = document.querySelector('input[name=imode]:checked').value === "full";
+    $("#inpaint-res").style.display = full ? "block" : "none";
+  } else {
+    $("#mask-stage").style.display = "none";
+  }
   rebuildTabsI18n();
 }
 
@@ -945,7 +1123,7 @@ function syncStyleUI() {
   const m = styleMeta(key);
   const hasNsfw = (S.cfg.styles || []).some(x => x.nsfw);
   $("#style-nsfw-wrap").style.display = hasNsfw ? "flex" : "none";
-  $("#style-box").style.display = (S.mode === "bgremove") ? "none" : "block";
+  $("#style-box").style.display = (S.mode === "bgremove" || S.mode === "inpaint") ? "none" : "block";
   const note = $("#style-note");
   if (!m) {
     note.innerHTML = t("style.noneNote");
@@ -956,13 +1134,77 @@ function syncStyleUI() {
   }
 }
 
+/* ---------------- 大胆度档位 L0–L3（Phase 3）---------------- */
+/* 只追加「机位 + 姿势」两段英文措辞到提示词末尾，不动画风、不动采样参数。
+   L1–L3 属成人向，复用「显示成人向」勾选框做门控。 */
+function isNsfwLoraFile(n) {
+  return typeof n === "string" &&
+    (n.startsWith("qwen21-nsfw-") || n.startsWith("thesealpacas-nsfw"));
+}
+function curBoldness() {
+  return $("#boldness").value || "";
+}
+function boldMeta(key) {
+  return (S.cfg.boldness_tiers || []).find(x => x.key === key) || null;
+}
+function renderBoldness() {
+  const sel = $("#boldness");
+  if (!sel) return;
+  const prev = sel.value;
+  const showNsfw = $("#style-nsfw").checked;
+  sel.innerHTML = "";
+  sel.appendChild(new Option(t("bold.none"), ""));
+  const order = S.cfg.boldness_order || [];
+  order.forEach(k => {
+    const x = boldMeta(k);
+    if (!x) return;
+    if (x.nsfw && !showNsfw) return;   // 门控：未开「显示成人向」时 L1–L3 不出现
+    const label = serverLabel("bold", k, k + " " + t("bold." + k + ".label"));
+    sel.appendChild(new Option((x.nsfw ? "🔒 " : "") + label, k));
+  });
+  // 关掉勾选框后原来选的 L2 可能已不在列表里 → 回落「不指定」
+  sel.value = [...sel.options].some(o => o.value === prev) ? prev : "";
+  syncBoldUI();
+}
+function syncBoldUI() {
+  const box = $("#bold-box");
+  if (!box) return;
+  // 只对 t2i / edit 有意义：pose 的姿势由 3D 人偶固定，bgremove / inpaint 不吃姿势描述
+  box.style.display = (S.mode === "t2i" || S.mode === "edit") ? "block" : "none";
+
+  const note = $("#bold-note");
+  const k = curBoldness();
+  if (!k) { note.innerHTML = ""; return; }
+  const lines = [];
+  const tip = t("bold." + k + ".tip");
+  if (tip && tip !== "bold." + k + ".tip") lines.push(tip);
+
+  // 核心提醒：NSFW LoRA + L0 = 出图平淡最常见的原因
+  if (k === "L0") {
+    const L = curLora();
+    const f2 = $("#lora2") ? $("#lora2").value : "";
+    if (isNsfwLoraFile(L && L.file) || isNsfwLoraFile(f2)) {
+      lines.push('<span style="color:#e0a33e">' + esc(t("bold.warnL0")) + "</span>");
+    }
+  }
+  // 提示词已经很长时再叠档位，两个姿势容易打架
+  const cur = $("#prompt") ? $("#prompt").value.trim() : "";
+  if (cur.length > 300) {
+    lines.push('<span style="color:#e0a33e">' + esc(t("bold.warnLong")) + "</span>");
+  }
+  note.innerHTML = lines.join("<br>");
+}
+
 function renderLoras() {
   const sel = $("#lora");
   sel.innerHTML = "";
   sel.appendChild(new Option(t("p.loraNoneOpt"), ""));
   const list = S.cfg.loras || [];
   const turbo = list.filter(x => x.turbo);
-  const plain = list.filter(x => !x.turbo);
+  // 「NSFW·」是后端 LORA_LABELS 里写死的中文标签前缀 —— 用它把 NSFW 款单独成组（放最后）
+  const isNsfw = x => (x.label || "").startsWith("NSFW·");
+  const nsfw = list.filter(x => !x.turbo && isNsfw(x));
+  const plain = list.filter(x => !x.turbo && !isNsfw(x));
   const grp = (label, arr) => {
     if (!arr.length) return;
     const g = document.createElement("optgroup");
@@ -972,6 +1214,7 @@ function renderLoras() {
   };
   grp(t("p.loraGroupTurbo"), turbo);
   grp(t("p.loraGroupPlain"), plain);
+  grp(t("p.loraGroupNsfw"), nsfw);
   // 默认挂加速 LoRA（6 步档）—— 出图最快，画质实测不降反升。
   // 注意 syncLoraUI() 会读这里的选择去锁步数，所以默认值必须在 setMode() 之前定好。
   sel.value = turbo.length ? turbo[0].file : "";
@@ -986,12 +1229,29 @@ function syncLoraUI() {
     renderTurboSteps();
   }
   // 姿势档不参与加速档：VNCCS 姿势 LoRA 和 viggle-turbo 是两套不同的东西，
-  // 叠加会互相打架；而且这一档要的是官方 25 步 / cfg 1 / euler。
-  const lock = turboOn() && S.mode !== "pose";
+  // 叠加会互相打架；局部重绘也必须走普通 KSampler（res_multistep/simple），
+  // turbo sigma 不是 KSampler 的合法 scheduler。
+  const lock = turboOn() && S.mode !== "pose" && S.mode !== "inpaint";
   const ts = lock ? curTurboSteps() : null;
   const sch = (S.cfg.turbo_schedules || {})[String(ts)] || {};
 
   $("#lora-w-wrap").style.display = L ? "block" : "none";
+
+  // viggle-turbo 是 DMD 蒸馏的学生 LoRA，alpha == r ⇒ strength 就是训练权重的**倍率**。
+  // 官方 README 两处明说「Leave the LoRA scale at 1.0」「Keep its strength at 1.0」。
+  // 实测调高会过驱动：v0.2.1 满图绿色噪点、v0.1 直接糊掉 ⇒ 加速档把上限压到 1.0。
+  const wEl = $("#lora-w"), wv = $("#lora-w-v"), wh = $("#lora-w-hint");
+  if (L && L.turbo) {
+    wEl.max = "1";
+    if (Number(wEl.value) > 1) wEl.value = "1";
+    wv.textContent = Number(wEl.value).toFixed(2);
+    wh.style.display = "block";
+    wh.textContent = t("p.loraWeightTurboHint");
+  } else {
+    wEl.max = "2";
+    wh.style.display = "none";
+  }
+
   $("#lora-turbo-wrap").style.display = (L && L.turbo) ? "flex" : "none";
   $("#turbo-steps-wrap").style.display = (L && L.turbo && lock) ? "block" : "none";
   $("#lora-turbo-x").textContent = t("p.turboSpeed", { n: r.turbo_speedup || 2 });
@@ -1037,9 +1297,94 @@ function syncLoraUI() {
   document.querySelectorAll(".tab em").forEach(e => {
     e.textContent = lock ? (e.dataset.turbo || e.dataset.base) : (e.dataset.base || e.textContent);
   });
+
+  // 主槽位换了 → 附加槽位的候选要重排（把主槽位已选的那个排掉）
+  if (typeof renderLora2 === "function") renderLora2();
 }
 
-/* ---------------- 局域网地址 ---------------- */
+/* ---------------- NSFW 竖版配方一键应用 ---------------- */
+/* 参数从 /api/config 的 nsfw_preset 读取（不在前端硬编码）。
+   顺序很关键：先选 LoRA → syncLoraUI() 让加速档锁定状态归位（从加速档切到普通 LoRA
+   时它会回落本档配方）→ 最后再覆写采样参数，否则刚设好的步数会被冲掉。 */
+function applyNsfwPreset() {
+  const pr = S.cfg && S.cfg.nsfw_preset;
+  if (!pr) return;
+  // 1) 主 LoRA：option 存在才选（不存在静默跳过，不报错）
+  const lsel = $("#lora");
+  if (pr.lora && [...lsel.options].some(o => o.value === pr.lora)) {
+    lsel.value = pr.lora;
+  }
+  // 2) 让 LoRA 相关 UI（加速档锁步数等）归位
+  syncLoraUI();
+  // 3) 覆写采样参数与尺寸，并同步刷新所有控件的显示值
+  const setRange = (id, val, dec) => {
+    const r = $("#" + id), v = $("#" + id + "-v");
+    r.value = val;
+    if (v) v.textContent = dec ? Number(r.value).toFixed(dec) : r.value;
+  };
+  setRange("steps", pr.steps, 0);
+  setRange("cfg", pr.cfg, 1);
+  $("#sampler").value = pr.sampler;
+  $("#scheduler").value = pr.scheduler;
+  $("#width").value = pr.width;
+  $("#height").value = pr.height;
+  toast(t("p.nsfwPreset"), "ok");
+}
+
+/* ---------------- 附加 LoRA（第二槽位，与主 LoRA 叠加） ---------------- */
+function renderLora2(keep) {
+  const sel = $("#lora2");
+  const want = (keep === undefined || keep === null) ? sel.value : keep;
+  const main = $("#lora").value;
+  sel.innerHTML = "";
+  sel.appendChild(new Option(t("p.lora2NoneOpt"), ""));
+  // 只列普通 LoRA（合并进权重的那种）；加速档 LoRA 必须放主槽位，后端也会拒。
+  // 顺带排掉主槽位已选的那个 —— 同一个文件挂两遍没有意义。
+  const plain = (S.cfg.loras || []).filter(x => !x.turbo && x.file !== main);
+  if (plain.length) {
+    const g = document.createElement("optgroup");
+    g.label = t("p.loraGroupPlain");
+    plain.forEach(x => g.appendChild(new Option(`${x.label} · ${x.size_mb} MB`, x.file)));
+    sel.appendChild(g);
+  }
+  sel.value = [...sel.options].some(o => o.value === want) ? want : "";
+  syncLora2UI();
+}
+
+function syncLora2UI() {
+  const file = $("#lora2").value;
+  const info = (S.cfg.loras || []).find(x => x.file === file);
+  $("#lora2-w-wrap").style.display = file ? "block" : "none";
+  const note = $("#lora2-note");
+  if (!file) { note.style.display = "none"; return; }
+  const main = $("#lora").value;
+  const w = Number($("#lora2-w").value).toFixed(2);
+  note.style.display = "block";
+  let txt = t("p.lora2Active", {
+    name: info ? info.label : file, w: w,
+    main: main ? main.replace(/\.safetensors$/, "") : t("p.lora2NoMain")
+  });
+  // 一致性 LoRA 是给「参考图编辑 / 局部重绘」训练的：它约束编辑发生在原图自身坐标系。
+  // 在文生图档没有原图可对齐，它只会整体改写画风 —— 实测噪声 -9%、块状伪影 -38%，
+  // 但 53% 的像素发生变化。属于 off-label 用法，明说一句免得用户以为「没效果/画风变了是 bug」。
+  if (/consistency/i.test(file) && (S.mode === "t2i")) {
+    txt += "\n" + t("p.lora2ConsistencyT2i");
+  }
+  note.textContent = txt;
+}
+
+/* ---------------- VAE（解码器） ---------------- */
+function renderVaes() {
+  const sel = $("#vae");
+  const want = sel.value || S.vae || "";
+  sel.innerHTML = "";
+  sel.appendChild(new Option(t("p.vaeDefaultOpt"), ""));
+  (S.cfg.vaes || []).forEach(x =>
+    sel.appendChild(new Option(`${x.label} · ${x.size_mb} MB`, x.file)));
+  sel.value = [...sel.options].some(o => o.value === want) ? want : "";
+  S.vae = sel.value;
+}
+
 function renderLan() {
   const url = S.cfg.lan_url || "";
   const chip = $("#p-lan");
@@ -1109,6 +1454,7 @@ async function upload(file) {
     if (!r.ok) throw new Error(j.error || t("ref.failShort"));
     S.ref = { ...j, url: imgURL({ filename: j.name, subfolder: j.subfolder, type: j.type }) };
     $("#thumb-img").src = S.ref.url;
+    if (S.mode === "inpaint") renderMaskStage();
     $("#thumb-nm").textContent = `${file.name}  ·  ${(file.size / 1024).toFixed(0)} KB`;
     $("#thumb").style.display = "block";
     $("#drop-txt").textContent = t("ref.done");
@@ -1119,6 +1465,66 @@ async function upload(file) {
   }
 }
 
+/* ---------------- 局部重绘：原图预览 + 蒙版画笔 ---------------- */
+function renderMaskStage() {
+  const stage = $("#mask-stage");
+  stage.style.display = "block";
+  if (!S.ref) { $("#mask-empty").style.display = "flex"; return; }
+  const img = new Image();
+  img.onload = () => {
+    const base = $("#mask-base");
+    base.width = img.naturalWidth; base.height = img.naturalHeight;
+    const bx = base.getContext("2d");
+    bx.clearRect(0, 0, base.width, base.height);
+    bx.drawImage(img, 0, 0);
+    const d = $("#mask-draw");
+    d.width = img.naturalWidth; d.height = img.naturalHeight;
+    d.getContext("2d").clearRect(0, 0, d.width, d.height);
+    S.maskReady = false;
+    $("#mask-empty").style.display = "none";
+  };
+  img.onerror = () => toast(t("ref.failShort"), "err");
+  img.src = S.ref.url;
+}
+
+/* 从蒙版画布算 bbox（原生像素坐标），padding + 对齐 32 + 裁剪到图内。 */
+function maskBBox() {
+  const d = $("#mask-draw");
+  const W = d.width, H = d.height;
+  if (!W || !H) return null;
+  const data = d.getContext("2d").getImageData(0, 0, W, H).data;
+  let minX = W, minY = H, maxX = -1, maxY = -1;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (data[(y * W + x) * 4 + 3] > 10) {  // alpha 阈值
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < 0) return null;
+  const pad = Math.max(16, Math.round(Math.max(maxX - minX, maxY - minY) * 0.08));
+  let x0 = Math.max(0, minX - pad), y0 = Math.max(0, minY - pad);
+  let x1 = Math.min(W, maxX + pad), y1 = Math.min(H, maxY + pad);
+  const align = v => Math.max(32, Math.ceil(v / 32) * 32);
+  let cw = align(x1 - x0), ch = align(y1 - y0);
+  let cx = x0, cy = y0;
+  if (cx + cw > W) { if (cw >= W) { cw = W; cx = 0; } else cx = W - cw; }
+  if (cy + ch > H) { if (ch >= H) { ch = H; cy = 0; } else cy = H - ch; }
+  return { cx, cy, cw, ch };
+}
+
+/* 把 base64 数据直接上传（局部重绘的蒙版画布走这里，不走文件选择）。 */
+async function uploadDataURL(name, dataURL) {
+  const r = await fetch("/api/upload", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename: name, data: dataURL }),
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || "上传失败");
+  return j;  // 含 .ref
+}
+
 /* ---------------- 提示词助手：维度词库 + 扩写 ---------------- */
 let LEX = null;
 
@@ -1126,6 +1532,111 @@ function esc(s) {
   return String(s == null ? "" : s)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+/* ---------------- 7 要素提示词结构（Phase 3）----------------
+   作者配方：7 条全写、顺序固定（机位→主体→姿势→场景光→皮肤→显式细节→收尾）、
+   总长 300–1500 字符。面板第一次打开时才渲染，不在初始化时无条件建 DOM。 */
+async function renderStruct() {
+  const panel = $("#struct-panel");
+  if (panel.classList.contains("on")) { panel.classList.remove("on"); return; }
+
+  if (!panel.dataset.built) {
+    const items = S.cfg.prompt_structure || [];
+    panel.innerHTML = items.map(it => {
+      const k = it.key;
+      return '<div class="st-row">'
+        + '<label><b id="st-' + esc(k) + '-label">' + esc(t("struct." + k + ".label")) + '</b> '
+        + '<span id="st-' + esc(k) + '-hint">' + esc(t("struct." + k + ".hint")) + '</span></label>'
+        + '<input type="text" id="st-' + esc(k) + '" placeholder="' + esc(it.ph || "") + '">'
+        + '</div>';
+    }).join("")
+      + '<div class="st-acts">'
+      + '<button id="st-build" data-i18n="struct.build">' + esc(t("struct.build")) + '</button>'
+      + '<button id="st-clear" class="ghost" data-i18n="struct.clear">' + esc(t("struct.clear")) + '</button>'
+      + '<span class="st-res" id="st-res"></span>'
+      + '</div>';
+    panel.dataset.built = "1";
+
+    $("#st-clear").onclick = () => {
+      (S.cfg.prompt_structure || []).forEach(it => {
+        const inp = $("#st-" + it.key);
+        if (inp) inp.value = "";
+      });
+      delete panel.dataset.res;      // 结果也一起清掉，否则切语言会被重新渲染出来
+      $("#st-res").innerHTML = "";
+    };
+    $("#st-build").onclick = composeFromStruct;
+  }
+  panel.classList.add("on");
+}
+
+/* 语言切换后刷新面板里的 label / hint（面板只建一次，不重建 DOM，用户填的内容不丢） */
+function refreshStructText() {
+  const panel = $("#struct-panel");
+  if (!panel || !panel.dataset.built) return;
+  (S.cfg.prompt_structure || []).forEach(it => {
+    const k = it.key;
+    const lb = $("#st-" + k + "-label");
+    const hn = $("#st-" + k + "-hint");
+    if (lb) lb.textContent = t("struct." + k + ".label");
+    if (hn) hn.textContent = t("struct." + k + ".hint");
+  });
+  renderStructResult();   // 结果文案也跟着语言走
+}
+
+/* 把面板 dataset 里存的上次拼装结果重新渲染成当前语言。
+   ⚠️ 只改 #st-res 的文本，不重建 DOM —— 用户已填的 7 格内容不能丢。 */
+function renderStructResult() {
+  const panel = $("#struct-panel");
+  const out = $("#st-res");
+  if (!panel || !out) return;
+  if (!panel.dataset.res) { out.innerHTML = ""; return; }
+  let r;
+  try {
+    r = JSON.parse(panel.dataset.res);
+  } catch (e) {
+    out.innerHTML = "";
+    return;
+  }
+  const lines = [t("struct.result", { n: r.chars || 0 })];
+  if (r.level === "short") lines.push(t("struct.tooShort"));
+  if ((r.missing || []).length) {
+    const names = r.missing.map(k => t("struct." + k + ".label")).join(" / ");
+    lines.push(t("struct.missing", { list: names }));
+  }
+  out.innerHTML = lines.join("<br>");
+}
+
+/* 收集 7 格 → POST /api/compose → 写进提示词框并回报字符数 */
+async function composeFromStruct() {
+  const fields = {};
+  (S.cfg.prompt_structure || []).forEach(it => {
+    const inp = $("#st-" + it.key);
+    fields[it.key] = inp ? inp.value.trim() : "";
+  });
+  let r;
+  try {
+    r = await fetch("/api/compose", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: fields, lang: $("#enh-lang").value || "en" }),
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    r = await r.json();
+  } catch (e) {
+    return toast(t("struct.fail") + "：" + e.message, "err");
+  }
+  $("#prompt").value = r.prompt || "";
+  // 结果存进 dataset，切语言时 renderStructResult() 能按新语言重画
+  const panel = $("#struct-panel");
+  if (panel) {
+    panel.dataset.res = JSON.stringify({
+      chars: r.chars || 0, level: r.level || "", missing: r.missing || [],
+    });
+  }
+  renderStructResult();
+  syncBoldUI();
 }
 
 async function renderLex() {
@@ -1366,22 +1877,52 @@ async function generate() {
     payload.height = Number($("#height").value);
     payload.ref_image = S.ref.ref;
     payload.pose_json = S.pose || "";
+  } else if (S.mode === "inpaint") {
+    payload.ref_image = S.ref.ref;
+    payload.inpaint_mode = document.querySelector('input[name=imode]:checked').value;
+    if (payload.inpaint_mode === "full") {
+      payload.resolution = Number($("#inpaint-resolution").value);
+    }
+    if (!S.maskReady) return toast(t("inpaint.paintFirst"), "err");
+    let m;
+    try {
+      m = await uploadDataURL("inpaint_mask.png", $("#mask-draw").toDataURL("image/png"));
+    } catch (e) {
+      return toast("蒙版上传失败：" + e.message, "err");
+    }
+    payload.mask_ref = m.ref;
+    const bb = maskBBox();
+    if (!bb) return toast(t("inpaint.maskEmpty"), "err");
+    payload.cx = bb.cx; payload.cy = bb.cy; payload.cw = bb.cw; payload.ch = bb.ch;
   } else {
     payload.resolution = Number($("#resolution").value);
     payload.ref_image = S.ref.ref;
   }
-  payload.count = Number($("#batch").value) || 1;
+  payload.count = (S.mode === "inpaint") ? 1 : (Number($("#batch").value) || 1);
 
   const sty = curStyle();
   if (sty) payload.style = sty;
 
+  // 大胆度档位只对 t2i / edit 有意义（pose 的姿势由人偶固定）
+  const bold = $("#boldness").value;
+  if (bold && (S.mode === "t2i" || S.mode === "edit")) payload.boldness = bold;
+
+  // VAE 全档生效（含局部重绘）：空值 = 模板自带（官方 VAE）
+  payload.vae = $("#vae").value || "";
+
   const L = curLora();
-  if (L) {
+  if (L && S.mode !== "inpaint") {
     payload.lora = L.file;
     payload.lora_weight = Number($("#lora-w").value);
     if (L.turbo) {
       payload.turbo = $("#lora-turbo").checked;
       if (payload.turbo) payload.turbo_steps = curTurboSteps();
+    }
+    // 附加 LoRA（第二槽位）：与主槽位串联叠加，只接受普通 LoRA
+    const L2 = $("#lora2").value;
+    if (L2) {
+      payload.lora2 = L2;
+      payload.lora2_weight = Number($("#lora2-w").value);
     }
   }
 
@@ -1525,6 +2066,16 @@ function showResult(job) {
       p.turbo ? "ok" : null);
     if (p.turbo && sc.label) add(t("res.preset"), serverLabel("sched", p.turbo_steps, sc.label));
   }
+  if (p.lora2) {
+    const LM2 = (S.cfg.loras || []).find(x => x.file === p.lora2);
+    add(t("res.lora2"),
+      "+ " + (LM2 ? serverLabel("lora", p.lora2, LM2.label) : p.lora2.replace(/\.safetensors$/, "")) +
+      (Number(p.lora2_weight) !== 1 ? " @" + p.lora2_weight : ""), "ok");
+  }
+  if (p.vae) {
+    const VM = (S.cfg.vaes || []).find(x => x.file === p.vae);
+    add(t("res.vae"), VM ? VM.label : p.vae, "ok");
+  }
   if (p.size) add(t("res.size"), p.size);
   if (urls.length > 1) add(t("res.count"), urls.length, "ok");
   add(t("res.steps"), p.steps);
@@ -1564,6 +2115,17 @@ function openModal(url, job) {
   meta[t("meta.scheduler")] = p.scheduler;
   meta[t("meta.seed")] = p.seed;
   meta[t("meta.elapsed")] = job.elapsed;
+  if (p.boldness) meta[t("meta.boldness")] = p.boldness;
+  // 配方削弱提示：这张图当时挂的 LoRA（主槽 p.lora 或附加槽 p.lora2）是 NSFW 款、
+  // 但采样参数没到满保真（50 步 / er_sde / beta / CFG 2.5）时提醒。
+  // 判据一律用 job 参数（与 p.steps/p.sampler/p.cfg 同口径），避免用户改设置后旧图被误标。
+  // typeof 兜底：p.lora / p.lora2 在部分档位（如局部重绘）可能不存在。
+  const isNsfwLora = (n) => typeof n === "string" &&
+    (n.startsWith("qwen21-nsfw-") || n.startsWith("thesealpacas-nsfw"));
+  if ((isNsfwLora(p.lora) || isNsfwLora(p.lora2)) &&
+      (Number(p.steps) < 50 || p.sampler !== "er_sde" || Number(p.cfg) < 2.5)) {
+    meta[t("meta.weakened")] = t("meta.weakenedVal");
+  }
   $("#m-meta").value = JSON.stringify(meta, null, 2);
   $("#modal").classList.add("show");
 }

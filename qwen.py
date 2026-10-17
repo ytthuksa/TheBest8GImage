@@ -14,8 +14,12 @@ qwen.py —— Qwen-Image-2.1 本地出图命令行入口（给 AI / 脚本调�
     python qwen.py t2i "一只橘猫" --lora turbo          # 加速档（默认 6 步，约 2x 快）
     python qwen.py t2i "霓虹招牌写着 OPEN" --lora turbo --turbo-steps 8   # 密集文字档
     python qwen.py edit "换成夜景" -r photo.png --lora turbo
+    python qwen.py edit "把外套换成红色风衣" -r photo.png --lora turbo --lora2 consistency
+    python qwen.py t2i "一只橘猫" --lora turbo --vae texture   # 换 VAE 解码器
+    python qwen.py t2i "浴室里的女人" --boldness L2        # 大胆度档位：自动补机位+姿势
     python qwen.py enhance "赛博朋克猫"
     python qwen.py loras
+    python qwen.py vaes
     python qwen.py status
     python qwen.py list
 
@@ -29,8 +33,16 @@ qwen.py —— Qwen-Image-2.1 本地出图命令行入口（给 AI / 脚本调�
     --negative "…"  负向提示词（加速档不生效）
     --sampler NAME  采样器（默认 res_multistep；加速档固定 euler）
     --scheduler N   调度器（默认 simple；加速档用 viggle sigma 表）
-    --lora NAME     LoRA 文件名，或 'turbo' 简写（自动挑 viggle-turbo 加速 LoRA）
+    --lora NAME     LoRA 文件名，或 'turbo' 简写（自动挑 viggle-turbo 加速 LoRA）；
+                    支持模糊匹配（'consistency' → 完整文件名）
     --lora-weight N LoRA 权重（默认 1.0）
+    --lora2 NAME    附加 LoRA（第二槽位，与主槽位**串联叠加**）；只接受普通 LoRA
+                    （加速档 LoRA 必须放 --lora）。例：--lora turbo --lora2 consistency
+    --lora2-weight N 附加 LoRA 权重（默认 1.0）
+    --vae NAME      切换 VAE 解码器：'official'（默认）/ 'texture'（texture-fix）/ 文件名
+                    用 `qwen.py vaes` 看列表。对全档生效（含局部重绘）
+    --boldness L2   大胆度档位（L0/L1/L2/L3）：只把「机位 + 姿势」追加到提示词末尾，
+                    不动任何采样参数。仅 t2i / edit 生效（抠图、姿势档忽略）
     --turbo / --no-turbo
                     强制开/关加速档；不指定则按 LoRA 类型自动（加速 LoRA 默认开）
     --turbo-steps N 加速档步数预设（官方 sigma 表，只有 4/5/6/7/8 合法）
@@ -149,6 +161,47 @@ def default_turbo_lora():
     return avail[0]
 
 
+def resolve_lora(name):
+    """LoRA 简写/模糊名 → 真实文件名。
+
+    先精确匹配，再按「去掉 .safetensors 后子串匹配」兜底 —— 免得每次都要敲一长串文件名。
+    例如 'consistency' → 'qwen-image-2.1-consistency.safetensors'。
+    """
+    name = (name or "").strip()
+    if not name:
+        return None
+    files = [x["file"] for x in S.list_loras()]
+    if name in files:
+        return name
+    stem = name[:-len(".safetensors")] if name.endswith(".safetensors") else name
+    hits = [f for f in files if stem.lower() in f.lower()]
+    if len(hits) == 1:
+        return hits[0]
+    if len(hits) > 1:
+        # 多个命中时优先取最短的（通常是通用版而不是某个变体）
+        return sorted(hits, key=len)[0]
+    return None
+
+
+def resolve_vae(name):
+    """VAE 简写 → 真实文件名。'official' = 模板自带（返回空串表示不切换）。"""
+    name = (name or "").strip()
+    if not name:
+        return None
+    low = name.lower()
+    if low in ("official", "官方", "default", "none", "-"):
+        return ""          # 空值 = 用模板自带，_apply_vae 会直接跳过
+    files = [x["file"] for x in S.list_vaes()]
+    if name in files:
+        return name
+    if low in ("texture", "texture-fix", "texture_fix", "fix"):
+        for f in files:
+            if "texture_fix" in f:
+                return f
+    hits = [f for f in files if low in f.lower()]
+    return hits[0] if hits else None
+
+
 def cmd_list(args):
     print("可用模式：")
     for k, r in S.RECIPES.items():
@@ -187,6 +240,28 @@ def cmd_loras(args):
                 print(f"         {note}")
         print(f"\n用法：--lora turbo（= {t}）[--turbo-steps 8]\n"
               f"  实测 1024×1024 文生图 63.1s → 30.1s（2.10x），参考图编辑 ~186s → 58s")
+    print("\n提示：LoRA 有两个槽位 —— 主槽位 --lora（可放加速档），附加槽位 --lora2（只放普通 LoRA，"
+          "与主槽位串联叠加）。\n      qwen.py vaes 可以看可切换的 VAE。")
+    return EXIT_OK
+
+
+def cmd_vaes(args):
+    vs = S.list_vaes()
+    if not vs:
+        print("models/vae 下没有可切换的 VAE 文件")
+        return EXIT_OK
+    print("可切换的 VAE（--vae 用文件名或下面的简写）：")
+    for x in vs:
+        short = ""
+        if "texture_fix" in x["file"]:
+            short = "  简写：texture"
+        elif x["file"] == S.DEFAULT_VAE:
+            short = "  简写：official（模板自带，等同不传 --vae）"
+        print(f"  {x['file']}  ({x['size_mb']} MB){short}")
+        if x.get("label") and x["label"] != x["file"]:
+            print(f"         {x['label']}")
+    print("\n注意：本机 VAE 走 bf16，官方 VAE 在 fp16 下才有的「透明区 NaN」问题不会触发；\n"
+          "      texture-fix 实测与官方差异很小（均差 2/255），不建议作为默认。")
     return EXIT_OK
 
 
@@ -296,6 +371,16 @@ def cmd_generate(args, mode):
         p["style"] = style
         if mode == "bgremove":
             warn("抠图档不吃风格预设（它的提示词是固定的抠图指令），--style 被忽略", args.quiet)
+    # 大胆度档位（纯提示词）：后端把「机位 + 姿势」追加到提示词末尾，不动任何采样参数。
+    # 抠图档不吃（提示词是固定指令）；姿势档也不吃（姿势由 3D 人偶 + LoRA 固定，加档位会打架）。
+    boldness = getattr(args, "boldness", None)
+    if boldness:
+        if mode == "bgremove":
+            warn("抠图档不吃大胆度档位（它的提示词是固定的抠图指令），--boldness 被忽略", args.quiet)
+        elif mode == "pose":
+            warn("姿势档不吃大胆度档位（姿势由 3D 人偶固定），--boldness 被忽略", args.quiet)
+        else:
+            p["boldness"] = boldness.strip().upper()
     lora = getattr(args, "lora", None)
     if lora and lora.strip().lower() in ("turbo", "viggle", "viggle-turbo"):
         lora = default_turbo_lora()
@@ -316,6 +401,32 @@ def cmd_generate(args, mode):
         if _is_turbo_lora and args.turbo is not False and args.steps is not None:
             warn("加速档下 --steps 不生效（步数由官方 sigma 表决定）；要换档位请用 --turbo-steps N",
                  args.quiet)
+
+    # ---- 附加 LoRA（第二槽位，与主槽位串联叠加）----
+    lora2 = getattr(args, "lora2", None)
+    if lora2:
+        lora2 = resolve_lora(lora2)
+        if not lora2:
+            print(f"参数错误: 找不到 LoRA {args.lora2!r}（qwen.py loras 看列表）", file=sys.stderr)
+            return EXIT_ARGS
+        if any(x["file"] == lora2 and x.get("turbo") for x in S.list_loras()):
+            print("参数错误: 附加槽位只接受普通 LoRA；加速档 LoRA 请放到 --lora", file=sys.stderr)
+            return EXIT_ARGS
+        if lora2 == lora:
+            print("参数错误: --lora2 不能和 --lora 是同一个文件", file=sys.stderr)
+            return EXIT_ARGS
+        p["lora2"] = lora2
+        p["lora2_weight"] = getattr(args, "lora2_weight", 1.0)
+
+    # ---- VAE（解码器）----
+    vae = getattr(args, "vae", None)
+    if vae:
+        vae = resolve_vae(vae)
+        if vae is None:
+            print(f"参数错误: 找不到 VAE {args.vae!r}（qwen.py vaes 看列表）", file=sys.stderr)
+            return EXIT_ARGS
+        if vae:            # 空串 = 显式要求官方/模板自带，不必写进 payload
+            p["vae"] = vae
 
     if mode == "t2i":
         w, h = parse_size(args.size)
@@ -369,6 +480,10 @@ def cmd_generate(args, mode):
         log(f"       LoRA={meta['lora']} @{meta['lora_weight']}"
             + (f"  ⚡加速档 {meta.get('turbo_steps')} 步"
                f"（sigmas=[{meta.get('turbo_nodes')}]）" if meta.get("turbo") else ""), args.quiet)
+    if meta.get("lora2"):
+        log(f"       附加LoRA={meta['lora2']} @{meta['lora2_weight']}（串联叠加）", args.quiet)
+    if meta.get("vae"):
+        log(f"       VAE={meta['vae']}", args.quiet)
 
     job = {
         "id": pid, "mode": mode, "mode_label": S.RECIPES[mode]["label"],
@@ -445,9 +560,18 @@ def main():
         p.add_argument("--batch", type=int, default=1, choices=[1, 2, 3, 4],
                        help="一次出几张（同一个提示词，一次采样出 N 张，1~4）")
         p.add_argument("--lora", default=None,
-                       help="LoRA 文件名（在 models/loras 下）或 'turbo' 简写")
+                       help="LoRA 文件名（在 models/loras 下）或 'turbo' 简写；"
+                            "支持模糊匹配，如 'consistency'")
         p.add_argument("--lora-weight", type=float, default=1.0,
                        help="LoRA 权重（默认 1.0）")
+        p.add_argument("--lora2", default=None,
+                       help="附加 LoRA（第二槽位，与主槽位串联叠加）；只接受普通 LoRA，"
+                            "加速档 LoRA 必须放 --lora。支持模糊匹配，如 'consistency'")
+        p.add_argument("--lora2-weight", type=float, default=1.0,
+                       help="附加 LoRA 权重（默认 1.0）")
+        p.add_argument("--vae", default=None,
+                       help="切换 VAE 解码器：'official'=模板自带 / 'texture'=texture-fix / "
+                            "或文件名。用 `qwen.py vaes` 看全部")
         p.add_argument("--turbo", dest="turbo", action="store_true", default=None,
                        help="强制开加速档（官方 sigma 表 + euler，步数见 --turbo-steps）")
         p.add_argument("--no-turbo", dest="turbo", action="store_false",
@@ -459,6 +583,8 @@ def main():
         p.add_argument("--style", default=None,
                        help="风格预设（纯提示词，不需要 LoRA）：film / anime / ink / ... "
                             "用 `qwen.py styles` 看全部；不传 = 不加风格")
+        p.add_argument("--boldness", default=None,
+                       help="大胆度档位 L0/L1/L2/L3（只追加机位+姿势到提示词末尾，不动采样参数）")
         p.add_argument("-o", "--out", default=None, help="产物复制到该路径")
         p.add_argument("--timeout", type=int, default=900)
         p.add_argument("--dry-run", action="store_true")
@@ -494,6 +620,7 @@ def main():
     p = sub.add_parser("status", help="看服务与显卡状态")
     p = sub.add_parser("list", help="列出可用模式与配方")
     p = sub.add_parser("loras", help="列出可用 LoRA（含加速档）")
+    p = sub.add_parser("vaes", help="列出可切换的 VAE 解码器")
     p = sub.add_parser("styles", help="列出风格预设（纯提示词，不需要 LoRA）")
     p.add_argument("--nsfw", action="store_true", help="连成人向风格一起列出")
 
@@ -505,6 +632,8 @@ def main():
         return cmd_list(args)
     if args.cmd == "loras":
         return cmd_loras(args)
+    if args.cmd == "vaes":
+        return cmd_vaes(args)
     if args.cmd == "styles":
         return cmd_styles(args)
     if args.cmd == "status":

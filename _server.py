@@ -128,6 +128,23 @@ RECIPES = {
         "fixed_lora": "VNCCS_QI2_PoseStudioV1.1.safetensors",
         "template": "_api_pose.json",
     },
+    # 局部重绘（2026-10-10 接入）：核心节点贴回 + 裁剪切块流水线两条路径。
+    # 两种方法的「蒙版外零漂移」都用核心节点 SetLatentNoiseMask + ImageCompositeMasked 保证，
+    # 区别只在是否在送入采样前把蒙版 bbox 切出来单独跑（裁剪切块快 11 倍、显存更稳）。
+    # 前端算好蒙版 bbox（原生像素坐标，已对齐 32 并裁剪到图内），经 inpaint_mode 选路。
+    "inpaint": {
+        "label": "局部重绘",
+        "steps": 20,
+        "cfg": 2.5,
+        "sampler": "res_multistep",
+        "scheduler": "simple",
+        "resolution": 1024,
+        "prefix": "Qwen21_web_inpaint",
+        "template": "_api_inpaint.json",
+        # 裁剪切块模板不单独成档，由 inpaint 模式内部按 inpaint_mode 选择
+        "template_crop": "_api_inpaint_crop.json",
+        "kind": "inpaint",
+    },
 }
 
 BGREMOVE_PROMPT = "Remove the background, and output a PNG image"
@@ -179,12 +196,34 @@ TURBO_LORAS = {
         "note": "官方 ComfyUI workflow 用的档，实测比 15 步基线快 2.1x",
     },
     "Qwen-Image-2.1-viggle-turbo-4step-lora-r64.safetensors": {
-        "label": "viggle-turbo v0.1 r64",
+        "label": "viggle-turbo v0.1 r64（旧版·偏软）",
         "steps": 4,
         "schedules": [4],
         "rank": 1,
-        "note": "旧版。官方用法是「4 步 + 不传 sigmas」，且原话「没有理由优先它」，仅作对照",
+        "note": "旧版学生模型。官方原话「v0.1 LoRA was softer」「没有理由优先它」，实测锐度只有 v0.2.1 的一半（Laplacian 772 vs 1630）。仅作对照，日常请用 v0.2.1。",
     },
+}
+
+# 普通 LoRA 的中文友好名（只影响下拉显示，不影响加载）。不在表里的直接显示文件名。
+# 这些 LoRA 都是 2026-10-11 调研后新加的；用法提示见调研报告。
+LORA_LABELS = {
+    "qwen-image-2.1-consistency.safetensors":
+        "Consistency 编辑一致性（编辑档用，文生图档 off-label）",
+    "qwen-image-2.1-outfit-swap.safetensors":
+        "Outfit-Swap 换装一致性（编辑档·可叠加速档）",
+    "qwen-image-2.1-multiple-angles-v2.safetensors":
+        "Multiple-Angles v2 相机视角控制（强度 0.8~1.0）",
+    "qwen-image-2.1-next-scene-step2500.safetensors":
+        "Next-Scene 链式分镜（强度 ≤0.7，编辑档）",
+    "qwen-image-2.1-anything2real.safetensors":
+        "Anything2Real 插画/动漫转真人（强度 0.6~0.8）",
+    # --- NSFW（本机自用；来源见 _nsfw_plan/融入系统架构方案.md）---
+    "qwen21-nsfw-femaledVaginus-v1.3-L22-31.safetensors":
+        "NSFW·femaledVaginus 成人人体（文生图档·默认最锐，强度 1.0）",
+    "thesealpacas-nsfw-v2.safetensors":
+        "NSFW·TheseAlpacas 最露骨（文生图档，强度 1.0）",
+    "qwen21-nsfw-image-edit.safetensors":
+        "NSFW·Image Edit 脱衣/换姿（编辑档专用）",
 }
 
 
@@ -418,6 +457,95 @@ def apply_style(p, prompt, negative):
     return prompt, negative, key, st["label"]
 
 
+# ── Phase 3：7 要素提示词结构 + L0–L3 大胆度档位（纯提示词，不碰采样参数）──
+# 结构来源：作者配方要求 7 条全写、顺序固定、总长 300–1500 字符。
+# ⚠️ 这里只放 key 与英文示例；中文标签/提示一律走 _i18n.js（前端不许硬编码文案）。
+PROMPT_STRUCTURE = [
+    {"key": "camera",  "ph": "A hyper-realistic photograph, low-angle shot, 35mm lens"},
+    {"key": "subject", "ph": "a 25-year-old woman, slender build, long wet black hair"},
+    {"key": "pose",    "ph": "crouching with knees apart, hands on the floor, looking back over the shoulder"},
+    {"key": "setting", "ph": "steamy bathroom, warm light through a frosted glass window"},
+    {"key": "skin",    "ph": "her skin is glistening, visible pores, natural skin texture"},
+    {"key": "anatomy", "ph": "(optional) explicit wording the LoRA was trained on"},
+    {"key": "finish",  "ph": "8k resolution, cinematic lighting, candid \"caught in the moment\" atmosphere, photorealistic anatomy"},
+]
+PROMPT_STRUCTURE_MIN_CHARS = 300
+PROMPT_STRUCTURE_MAX_CHARS = 1500
+
+# 大胆度档位：只提供**机位 + 姿势**两段英文措辞，靠 apply_boldness() 追加到提示词末尾。
+# ⚠️ 不要往这里塞画质词/风格词 —— 风格由 STYLE_PRESETS 管，两者别打架。
+BOLDNESS_TIERS = {
+    "L0": {"nsfw": False, "camera": "eye-level shot, 50mm lens",
+           "pose": "standing with weight on one leg, one hand in a pocket, looking toward the camera"},
+    "L1": {"nsfw": True,  "camera": "slightly low angle, 35mm lens",
+           "pose": "crouching with knees apart, hands on the floor, looking back over the shoulder"},
+    "L2": {"nsfw": True,  "camera": "low angle looking up, 35mm lens",
+           "pose": "standing with legs apart, torso arched back, one hand behind the head"},
+    "L3": {"nsfw": True,  "camera": "extreme low angle looking up, wide lens",
+           "pose": "cropped framing from mid-thigh up, one leg extended to the side, torso twisted toward the camera"},
+}
+BOLDNESS_ORDER = ["L0", "L1", "L2", "L3"]
+
+
+def boldness_list():
+    """给前端 / CLI 的档位清单（含 nsfw 标记，UI 用它做门控）。"""
+    out = []
+    for k in BOLDNESS_ORDER:
+        t = BOLDNESS_TIERS.get(k) or {}
+        out.append({"key": k, "nsfw": bool(t.get("nsfw")),
+                    "camera": t.get("camera") or "", "pose": t.get("pose") or ""})
+    return out
+
+
+def apply_boldness(p, prompt):
+    """
+    把大胆度档位的「机位 + 姿势」**追加到提示词末尾**，返回 (prompt, tier_key)。
+
+    ⚠️ 追加在末尾而不是开头：7 要素顺序是 机位 → 主体 → 姿势，开头会打乱；
+       末尾追加只影响「没写姿势」的短提示词，已经用结构面板写全的用户不该选档位。
+    ⚠️ 只动提示词，**绝不碰 steps/cfg/sampler/scheduler/尺寸** —— 这是 Phase 3 的红线。
+    """
+    # 类型校验：调用方传了非字符串（数字 / 数组 / 对象）应报 400 而不是 500。
+    # ⚠️ 不做 str() 静默强转 —— 123 变 "123" 会掩盖调用方的错误。
+    raw = p.get("boldness")
+    if raw is not None and not isinstance(raw, str):
+        raise ValueError("boldness 必须是字符串（L0/L1/L2/L3）")
+    key = (raw or "").strip().upper()
+    if not key or key in ("NONE", "OFF"):
+        return prompt, ""
+    t = BOLDNESS_TIERS.get(key)
+    if t is None:
+        raise ValueError(f"未知大胆度档位：{key}（可选 {'/'.join(BOLDNESS_ORDER)}）")
+    blk = ", ".join(x for x in ((t.get("camera") or "").strip(),
+                                (t.get("pose") or "").strip()) if x)
+    if blk:
+        prompt = f"{prompt.rstrip(' .,')}, {blk}".strip(" ,")
+    return prompt, key
+
+
+def compose_prompt(fields, lang="en"):
+    """
+    7 要素 → 一段提示词。fields 是 {key: text} 的 dict（前端结构面板逐格填）。
+    返回 {"prompt", "chars", "missing": [...], "level": "short|ok|long"}。
+    ⚠️ 顺序固定按 PROMPT_STRUCTURE，**不按用户填写的先后**。
+    """
+    parts, missing = [], []
+    for it in PROMPT_STRUCTURE:
+        v = (fields.get(it["key"]) or "").strip()
+        v = v.rstrip(" .,")
+        if not v:
+            # 第 6 项（显式细节）是可选的，其余空着要报给前端
+            if it["key"] != "anatomy":
+                missing.append(it["key"])
+            continue
+        parts.append(v[0].upper() + v[1:])
+    text = ", ".join(parts)
+    n = len(text)
+    level = "short" if n < PROMPT_STRUCTURE_MIN_CHARS else (
+        "long" if n > PROMPT_STRUCTURE_MAX_CHARS else "ok")
+    return {"prompt": text, "chars": n, "missing": missing, "level": level}
+
+
 def list_loras():
     """扫描 models/loras，标注哪些是 viggle-turbo 加速 LoRA。"""
     out = []
@@ -435,7 +563,7 @@ def list_loras():
         steps = (meta or {}).get("steps")
         out.append({
             "file": fn,
-            "label": (meta or {}).get("label") or fn,
+            "label": (meta or {}).get("label") or LORA_LABELS.get(fn) or fn,
             "turbo": meta is not None,
             "nodes": turbo_nodes(steps) if steps else None,
             "steps": steps,
@@ -449,6 +577,53 @@ def list_loras():
     return out
 
 
+# --------------------------------------------------------------------------
+# VAE（可切换）
+# --------------------------------------------------------------------------
+VAE_DIR = os.path.join(BASE, "models", "vae")
+DEFAULT_VAE = "qwen_image_2.1_vae_bf16.safetensors"
+
+# 给已知的几个 VAE 起人话名字；不在表里的直接显示文件名
+VAE_LABELS = {
+    "qwen_image_2.1_vae_bf16.safetensors": "官方 VAE",
+    "texture_fix_vae_for_qwen_image_2.1_bf16.safetensors":
+        "texture-fix（纹理更干净 / 修 fp16 透明区 NaN）",
+}
+
+
+def list_vaes():
+    """磁盘上真实存在的 VAE 文件（不列 ComfyUI 的内置别名如 pixel_space）。"""
+    out = []
+    if not os.path.isdir(VAE_DIR):
+        return out
+    for fn in sorted(os.listdir(VAE_DIR)):
+        if not fn.lower().endswith((".safetensors", ".ckpt", ".pt")):
+            continue
+        try:
+            mb = round(os.path.getsize(os.path.join(VAE_DIR, fn)) / 1024 / 1024, 1)
+        except OSError:
+            mb = None
+        out.append({"file": fn, "label": VAE_LABELS.get(fn, fn), "size_mb": mb})
+    return out
+
+
+def _apply_vae(wf, p):
+    """把 wf 里所有 VAELoader 换成用户选的 VAE。空值 = 用模板自带（官方）。"""
+    name = (p.get("vae") or "").strip()
+    if not name:
+        return None
+    if name not in {x["file"] for x in list_vaes()}:
+        raise ValueError(f"VAE 不存在：{name}")
+    hit = 0
+    for n in wf.values():
+        if n.get("class_type") == "VAELoader":
+            n["inputs"]["vae_name"] = name
+            hit += 1
+    if not hit:
+        raise ValueError("模板里没有 VAELoader，无法切换 VAE")
+    return name
+
+
 # 「一次出几张」用的插入节点号（模板里只用了 1~8，不冲突）
 _BATCH_NODE = "90"
 MAX_BATCH = 4
@@ -460,6 +635,8 @@ _T_NOISE = "93"
 _T_SELSAMPLER = "94"
 _T_SIGMAS = "95"
 _T_ADV = "96"
+# 「第二个 LoRA 槽位」——普通 LoRA（合并进权重），与主槽位的加速档可叠加
+_T_LORA2 = "97"
 
 
 def _apply_batch(wf, rec, count):
@@ -542,18 +719,42 @@ def _to_turbo(wf, rec, lora_name, strength, nodes):
     del wf[ks_id]
 
 
-def _to_plain_lora(wf, rec, lora_name, strength):
-    """普通 LoRA：合并进权重（LoraLoaderModelOnly），插在模型源和采样器之间。"""
+def _to_plain_lora(wf, rec, lora_name, strength, node_id=_T_LORA):
+    """普通 LoRA：合并进权重（LoraLoaderModelOnly），插在模型源和采样器之间。
+
+    node_id 可指定插入槽位：主槽位 `_T_LORA`、第二个槽位 `_T_LORA2`。
+    连续调用两次即天然串联（第二次读到的是第一次改过的 `ks["model"]`），
+    所以「附加 LoRA 先挂、主 LoRA（含加速档）后挂」的顺序天然成立。
+    """
     ks = wf[rec["_ks"]]["inputs"]
-    wf[_T_LORA] = {
+    wf[node_id] = {
         "class_type": "LoraLoaderModelOnly",
         "inputs": {"model": list(ks["model"]), "lora_name": lora_name,
                    "strength_model": strength},
     }
-    ks["model"] = [_T_LORA, 0]
+    ks["model"] = [node_id, 0]
 
-# 分辨率预设（长边），Qwen-Image-2.1 是 16 倍下采样
-RES_PRESETS = [768, 1024, 1280]
+# 分辨率预设 —— ⚠️ 这两个列表语义不同，别再合并！
+#   RES_PRESETS         ：方形「宽度 / 高度」下拉（t2i / pose 档用）
+#   RES_PRESETS_LONGSIDE：「长边分辨率」下拉（edit / bgremove / inpaint 全幅用；
+#                         输出尺寸跟随参考图，不是方形）
+# 长边档曾试过 1728，实测 edit + 1728² 显存峰值 7863/8188 MiB（96%，余量仅 ~325 MiB），
+# 无安全裕量，故长边退回 768/1024/1280。
+RES_PRESETS = [768, 1024, 1152, 1280, 1344]
+RES_PRESETS_LONGSIDE = [768, 1024, 1280]
+
+# NSFW 满保真「竖版配方」：UI 一键按钮用（前端从 /api/config 读取，不硬编码）。
+# 实测墙钟 ≈380 s（768×1152 / 50 步 / CFG 2.5 / er_sde + beta / LoRA 强度 1.0）。
+NSFW_PRESET = {
+    "label": "NSFW 竖版配方",
+    "steps": 50,
+    "cfg": 2.5,
+    "sampler": "er_sde",
+    "scheduler": "beta",
+    "width": 768,
+    "height": 1152,
+    "lora": "qwen21-nsfw-femaledVaginus-v1.3-L22-31.safetensors",
+}
 
 # --------------------------------------------------------------------------
 # 模板加载
@@ -593,6 +794,13 @@ for _k, _r in RECIPES.items():
         assert _r["_ks"] and _r["_load"], f"模板 {_k} 缺关键节点"
     else:
         assert _r["_te"] and _r["_ks"], f"模板 {_k} 缺关键节点"
+
+# 局部重绘的第二种模板（裁剪切块流水线），不单独成档，
+# 由 build_workflow 内部按 inpaint_mode 选择。关键节点同样按 class_type 定位。
+if "inpaint" in RECIPES:
+    _crop_tpl = os.path.join(BASE, RECIPES["inpaint"]["template_crop"])
+    with open(_crop_tpl, "r", encoding="utf-8") as _f:
+        _TEMPLATES["inpaint_crop"] = json.load(_f)
 
 
 # --------------------------------------------------------------------------
@@ -687,9 +895,120 @@ def job_list(limit=60):
 # --------------------------------------------------------------------------
 # 工作流构造
 # --------------------------------------------------------------------------
+def _locate_inpaint(wf):
+    """定位 inpaint 模板的关键节点（两个 LoadImage：源图 / 蒙版）。
+
+    靠「下游用途」区分两个 LoadImage，而不是写死节点号——
+    源图喂给 VAEEncode.pixels（同时还是 TextEncode 的 image_1 与贴回的 destination），
+    蒙版图喂给 ImageToMask.image。返回各节点 id。
+    """
+    out = {}
+    out["te"] = next((nid for nid, n in wf.items()
+                      if n.get("class_type") == "TextEncodeQwenImage21"), None)
+    out["ks"] = next((nid for nid, n in wf.items()
+                      if n.get("class_type") == "KSampler"), None)
+    out["save"] = next((nid for nid, n in wf.items()
+                        if n.get("class_type") == "SaveImage"), None)
+
+    def feeds(nid, ctype, field):
+        for n in wf.values():
+            v = (n.get("inputs") or {}).get(field)
+            if isinstance(v, list) and len(v) == 2 and v[0] == nid \
+                    and n.get("class_type") == ctype:
+                return True
+        return False
+
+    for nid in (k for k, n in wf.items() if n.get("class_type") == "LoadImage"):
+        if feeds(nid, "ImageToMask", "image"):
+            out["load_mask"] = nid
+        else:
+            out["load_src"] = nid
+    return out
+
+
+def _build_inpaint(rec, p):
+    """局部重绘：把用户参数注入 inpaint 模板，返回 (workflow, meta)。
+
+    两种路径共用同一套蒙版/贴回逻辑，区别在是否先把蒙版 bbox 切出来单独跑：
+    * crop（默认/推荐）：切小块在 native 分辨率重绘 → ColorTransfer 校色 → 贴回，快约 11 倍。
+    * full：整图 VAEEncode 后 SetLatentNoiseMask，适合蒙版铺满大半张图的情况。
+    前端已算好蒙版 bbox（原生像素坐标，对齐 32 并裁剪到图内），这里直接填进节点。
+    """
+    kind = (p.get("inpaint_mode") or "crop")
+    tpl_key = "inpaint_crop" if kind == "crop" else "inpaint"
+    wf = copy.deepcopy(_TEMPLATES[tpl_key])
+    loc = _locate_inpaint(wf)
+
+    src = p.get("ref_image")
+    mask = p.get("mask_ref")
+    if not src:
+        raise ValueError("局部重绘需要先上传原图")
+    if not mask:
+        raise ValueError("请先用画笔涂抹要重绘的区域")
+    wf[loc["load_src"]]["inputs"]["image"] = src
+    wf[loc["load_mask"]]["inputs"]["image"] = mask
+
+    ks = wf[loc["ks"]]["inputs"]
+    seed = int(p.get("seed") if p.get("seed") not in (None, "", -1)
+              else random.randint(1, 2 ** 31 - 1))
+    steps = max(1, min(60, int(p.get("steps") or rec["steps"])))
+    cfg = max(0.0, min(10.0, float(p.get("cfg", rec["cfg"]))))
+    # 局部重绘不支持 viggle-turbo sigma。UI 加速档使用的 sentinel（旧版可能是
+    # "__viggle__" 或 "viggle"）不是 KSampler.scheduler 的合法枚举；遇到它时安全回落
+    # 到本档配方，避免 ComfyUI 只返回笼统的 Prompt validation failed。
+    sampler = (p.get("sampler") or rec["sampler"]).strip()
+    scheduler = (p.get("scheduler") or rec["scheduler"]).strip()
+    valid_schedulers = {
+        "simple", "sgm_uniform", "karras", "exponential", "ddim_uniform",
+        "beta", "normal", "linear_quadratic", "kl_optimal",
+    }
+    if scheduler not in valid_schedulers:
+        scheduler = rec["scheduler"]
+    ks["seed"] = seed
+    ks["steps"] = steps
+    ks["cfg"] = cfg
+    ks["sampler_name"] = sampler
+    ks["scheduler"] = scheduler
+    ks["denoise"] = 1.0  # 局部重绘必须全噪，否则蒙版区域跑不动
+
+    te = wf[loc["te"]]["inputs"]
+    prompt = (p.get("prompt") or "").strip()
+    te["prompt"] = prompt or "regenerate the masked region naturally, keep everything else unchanged"
+    te["negative_prompt"] = (p.get("negative") or "").strip()
+
+    if kind == "crop":
+        cx = int(p.get("cx", 0)); cy = int(p.get("cy", 0))
+        cw = max(32, int(p.get("cw", 256))); ch = max(32, int(p.get("ch", 256)))
+        for nid, n in wf.items():
+            ct = n.get("class_type")
+            inp = n["inputs"]
+            if ct in ("ImageCrop", "CropMask"):
+                inp["x"], inp["y"], inp["width"], inp["height"] = cx, cy, cw, ch
+            elif ct == "ImageCompositeMasked":
+                inp["x"], inp["y"] = cx, cy
+        te["resolution"] = 0  # 切块用 native 尺寸，交给模型按切块大小处理
+        meta_size = f"切块 {cw}x{ch} @ ({cx},{cy})"
+    else:
+        te["resolution"] = max(256, min(2048, int(p.get("resolution", rec["resolution"]))))
+        meta_size = f"全幅 × {te['resolution']}"
+
+    # VAE 切换（局部重绘也吃 —— texture-fix VAE 对透明区/细纹理更友好）
+    vae_name = _apply_vae(wf, p)
+
+    wf[loc["save"]]["inputs"]["filename_prefix"] = rec["prefix"]
+    meta = {"seed": seed, "steps": steps, "cfg": cfg, "sampler": sampler,
+            "scheduler": scheduler, "resolution": te["resolution"],
+            "inpaint_mode": kind, "size": meta_size}
+    if vae_name:
+        meta["vae"] = vae_name
+    return wf, meta
+
+
 def build_workflow(mode, p):
     """按模式把用户参数注入 API 模板，返回 (workflow, meta)。"""
     rec = RECIPES[mode]
+    if rec.get("kind") == "inpaint":
+        return _build_inpaint(rec, p)
     wf = copy.deepcopy(_TEMPLATES[mode])
 
     te = wf[rec["_te"]]["inputs"] if rec.get("_te") else None
@@ -709,6 +1028,24 @@ def build_workflow(mode, p):
         lora_weight = max(-4.0, min(4.0, float(p.get("lora_weight", 1.0))))
     except (TypeError, ValueError):
         lora_weight = 1.0
+
+    # ---- 第二个 LoRA 槽位（附加 LoRA，与主槽位**叠加**）----
+    # 只接受普通 LoRA（LoraLoaderModelOnly 合并进权重）；加速档 LoRA 必须放主槽位，
+    # 否则接线会乱（它要走 ViggleTurboLora 运行时旁路 + sigma 表）。
+    # 姿势档不参与：它的 LoRA 写死在模板里，再叠一个会破坏人偶图↔人物图的对应关系。
+    lora2_name = "" if mode == "pose" else (p.get("lora2") or "").strip()
+    if lora2_name:
+        if lora2_name not in {x["file"] for x in list_loras()}:
+            raise ValueError(f"附加 LoRA 不存在：{lora2_name}")
+        if lora2_name in TURBO_LORAS:
+            raise ValueError("附加 LoRA 槽位只接受普通 LoRA；加速档 LoRA 请放到上面的主槽位")
+        if lora2_name == lora_name:
+            raise ValueError("附加 LoRA 不能和主 LoRA 是同一个文件")
+    try:
+        lora2_weight = max(-4.0, min(4.0, float(p.get("lora2_weight", 1.0))))
+    except (TypeError, ValueError):
+        lora2_weight = 1.0
+
     turbo_meta = TURBO_LORAS.get(lora_name)
     # 选了加速 LoRA 就默认开加速档；显式传 turbo=false 可只挂 LoRA 走经典采样
     if turbo_meta is not None:
@@ -717,6 +1054,13 @@ def build_workflow(mode, p):
         turbo = bool(p.get("turbo", False)) and bool(lora_name)
         if turbo:
             raise ValueError("加速档只支持 viggle-turbo 系列的 LoRA")
+
+    # viggle-turbo 是 DMD 蒸馏的学生 LoRA，alpha == r ⇒ strength 就是训练权重的**倍率**。
+    # 官方 README：「Leave the LoRA scale at 1.0 (alpha equals rank)」「Keep its strength at 1.0」。
+    # 实测过驱动会坏：v0.2.1 @2.0 → 满图绿色色偏噪点（绿偏像素 0.7% vs 1.0 的 0%），
+    # v0.1 r64 @2.0 → 画面发糊。这里兜底夹到 ≤1.0，UI 也把滑杆上限压到 1.0。
+    if turbo:
+        lora_weight = min(lora_weight, 1.0)
 
     # 加速档步数：必须是该 LoRA 支持的**官方预设**（sigma 表和步数是一体的，
     # 不能让用户随便填一个数 —— 表里的节点是学生模型训练时的落点）。
@@ -759,6 +1103,11 @@ def build_workflow(mode, p):
     if mode in ("t2i", "edit"):
         prompt, negative, style_key, style_label = apply_style(p, prompt, negative)
 
+    # 大胆度档位：只追加机位+姿势到提示词末尾（纯提示词，不动任何采样参数）
+    bold_key = ""
+    if mode in ("t2i", "edit"):
+        prompt, bold_key = apply_boldness(p, prompt)
+
     if mode == "t2i":
         w = int(p.get("width", res))
         h = int(p.get("height", res))
@@ -770,6 +1119,8 @@ def build_workflow(mode, p):
         wf[rec["_latent"]]["inputs"]["width"] = w
         wf[rec["_latent"]]["inputs"]["height"] = h
         meta = {"size": f"{w}x{h}"}
+        if bold_key:
+            meta["boldness"] = bold_key
 
     elif mode == "edit":
         ref = p.get("ref_image")
@@ -780,6 +1131,8 @@ def build_workflow(mode, p):
         te["negative_prompt"] = negative
         te["resolution"] = res
         meta = {"size": f"跟随参考图 × {res}"}
+        if bold_key:
+            meta["boldness"] = bold_key
 
     elif mode == "pose":
         # 姿势编辑：人偶图（image1）由 pose_json 里的 poseReference 自带，
@@ -826,6 +1179,15 @@ def build_workflow(mode, p):
     # 而 _apply_batch 对 edit/bgremove 正是靠改 KSampler.latent_image 插 RepeatLatentBatch。
     _apply_batch(wf, rec, count)
 
+    # VAE 切换：空值 = 用模板自带（官方 VAE）。所有模板都有 VAELoader，直接换 vae_name。
+    vae_name = _apply_vae(wf, p)
+
+    # 附加 LoRA 先挂（普通 LoRA，合并进权重）；主 LoRA / 加速档再挂到它上面。
+    # 顺序是刻意的：_to_turbo 从 KSampler 的 model 输入读「模型源」，
+    # 所以先接附加 LoRA，加速档的 ViggleTurboLora 就会包在它外层。
+    if lora2_name:
+        _to_plain_lora(wf, rec, lora2_name, lora2_weight, _T_LORA2)
+
     if lora_name:
         if turbo:
             _to_turbo(wf, rec, lora_name, lora_weight, turbo_nodes(turbo_steps))
@@ -849,7 +1211,46 @@ def build_workflow(mode, p):
             meta["cfg"] = None
             meta["turbo_steps"] = turbo_steps
             meta["turbo_nodes"] = turbo_nodes(turbo_steps)
+    if lora2_name:
+        meta["lora2"] = lora2_name
+        meta["lora2_weight"] = lora2_weight
+    if vae_name:
+        meta["vae"] = vae_name
     return wf, meta
+
+
+def _submit_error_detail(obj):
+    """把 ComfyUI /prompt 的校验响应压缩成前端可读的错误信息。"""
+    msg = obj.get("error") or {}
+    parts = []
+    if isinstance(msg, dict):
+        title = msg.get("message") or msg.get("type")
+        if title:
+            parts.append(str(title))
+        details = msg.get("details")
+        if isinstance(details, dict):
+            parts.extend(f"{k}: {v}" for k, v in details.items())
+        elif details:
+            parts.append(str(details))
+    elif msg:
+        parts.append(str(msg))
+
+    # ComfyUI 将最有用的节点/输入原因放在顶层 node_errors；旧逻辑只显示
+    # error.message，导致 UI 仅报「Prompt outputs failed validation」。
+    node_errors = obj.get("node_errors") or {}
+    for nid, node in node_errors.items():
+        ctype = node.get("class_type") or "node"
+        for err in node.get("errors") or []:
+            extra = err.get("extra_info") or {}
+            input_name = extra.get("input_name")
+            reason = err.get("details") or err.get("message") or err.get("type") or "校验失败"
+            prefix = f"节点 {nid} {ctype}"
+            if input_name:
+                prefix += f".{input_name}"
+            parts.append(f"{prefix}: {reason}")
+
+    detail = "；".join(parts) or json.dumps(obj, ensure_ascii=False)
+    return detail[:900]
 
 
 def submit(wf):
@@ -858,16 +1259,7 @@ def submit(wf):
     st, obj = http_json(COMFY + "/prompt", {"prompt": wf, "client_id": client_id})
     if st == 200 and obj.get("prompt_id"):
         return True, obj["prompt_id"]
-    # 把 ComfyUI 的节点校验错误提炼成人话
-    msg = obj.get("error") or {}
-    detail = ""
-    if isinstance(msg, dict):
-        detail = msg.get("message") or msg.get("type") or ""
-        for k, v in (msg.get("details") or {}).items():
-            detail += f" | {k}: {v}"
-    if not detail:
-        detail = json.dumps(obj, ensure_ascii=False)[:400]
-    return False, detail
+    return False, _submit_error_detail(obj)
 
 
 def fetch_images(pid):
@@ -1026,6 +1418,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_upload()
             if path == "/api/enhance":
                 return self._api_enhance()
+            if path == "/api/compose":
+                return self._api_compose()
             if path == "/api/free":
                 st, obj = http_json(COMFY + "/free",
                                     {"unload_models": True, "free_memory": True})
@@ -1126,12 +1520,19 @@ class Handler(BaseHTTPRequestHandler):
             "recipes": {k: {kk: vv for kk, vv in v.items() if not kk.startswith("_")}
                         for k, v in RECIPES.items()},
             "res_presets": RES_PRESETS,
+            "res_presets_longside": RES_PRESETS_LONGSIDE,
+            "nsfw_preset": NSFW_PRESET,
             "bgremove_prompt": BGREMOVE_PROMPT,
             "loras": list_loras(),
+            "vaes": list_vaes(),
+            "default_vae": DEFAULT_VAE,
             "turbo_schedules": {str(k): {"nodes": v[0], "label": v[1], "note": v[2]}
                                 for k, v in TURBO_SCHEDULES.items()},
             "styles": style_list(),
             "style_order": STYLE_ORDER,
+            "prompt_structure": PROMPT_STRUCTURE,
+            "boldness_tiers": boldness_list(),
+            "boldness_order": BOLDNESS_ORDER,
             "lan_url": lan_url(),
             "comfy_url": COMFY,
             "port": PORT,
@@ -1276,6 +1677,21 @@ class Handler(BaseHTTPRequestHandler):
                 "source": "offline", "source_label": "离线结构增强",
                 "count": count, "lang": lang,
                 "note": "Ollama 不可用（%s），已用离线结构增强" % e})
+
+    # ---- 7 要素 → 提示词（纯拼装，不调模型、不动采样参数）----
+    def _api_compose(self):
+        p = self._json_body()
+        fields = p.get("fields")
+        if not isinstance(fields, dict):
+            return self._send(400, {"error": "fields 必须是对象"})
+        # 逐值校验：非字符串（数字 / 数组 / 对象）报 400，与 fields 非 dict 的错误语义保持一致。
+        # ⚠️ 不做 str() 静默强转 —— 123 变 "123" 会掩盖调用方的错误。
+        for k, v in fields.items():
+            if v is not None and not isinstance(v, str):
+                return self._send(400, {"error": f"fields.{k} 必须是字符串"})
+        # lang 目前不参与拼接（示例文案在前端 i18n 里），留着备用
+        lang = "zh" if p.get("lang") == "zh" else "en"
+        return self._send(200, compose_prompt(fields, lang))
 
     # ---- 代理 ComfyUI /view ----
     def _proxy_view(self, qs):
